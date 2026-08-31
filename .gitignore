@@ -42,3 +42,6 @@ dist-ssr
 !.vscode/
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# Pinned omp binary (scripts/fetch-omp.mjs)
+/crates/shell/binaries/

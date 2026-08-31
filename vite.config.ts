@@ -10,4 +10,14 @@ export default defineConfig({
   run: {
     cache: true,
   },
+  // Keep vitest from descending into nix flake inputs and agent cache.
+  test: {
+    exclude: [
+      "**/node_modules/**",
+      "**/.direnv/**",
+      "**/.vp/**",
+      "**/.corepack/**",
+      "**/.agents/**",
+    ],
+  },
 });

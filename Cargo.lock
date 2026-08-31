@@ -1373,13 +1373,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "greet"
-version = "0.1.0"
-dependencies = [
- "tauri",
-]
-
-[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3123,7 +3116,7 @@ dependencies = [
 name = "shell"
 version = "0.1.0"
 dependencies = [
- "greet",
+ "parking_lot",
  "serde",
  "serde_json",
  "tauri",

@@ -1,49 +1,76 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
+import { killOmp, type OmpStartInfo, startOmp } from "./rpc/tauri-transport";
+import { RpcSession } from "./rpc/session-core";
+
+type Phase = "idle" | "starting" | "running" | "error";
+
+interface RoundTrip {
+  info: OmpStartInfo;
+  ready: unknown;
+  negotiated: number;
+  canned: unknown;
+}
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [result, setResult] = useState<RoundTrip | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  const run = useCallback(async () => {
+    setPhase("starting");
+    setResult(null);
+    setError(null);
+    try {
+      const { info, transport } = await startOmp();
+      const session = await RpcSession.start(transport, {
+        onExit: () => setPhase("idle"),
+      });
+      // Canned command: proves the full byte path spawn → pipe → parse → render.
+      const canned = await session.command({ type: "get_state" });
+      setResult({ info, ready: session.ready, negotiated: session.protocolVersion, canned });
+      setPhase("running");
+      session.close();
+      await killOmp();
+      setPhase("idle");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setPhase("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    void run();
+  }, [run]);
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+      <h1>omp-gui · T1 wire round-trip</h1>
+      <p>
+        Spawns the pinned <code>omp --mode rpc-ui</code> subprocess, parses the <code>ready</code>{" "}
+        frame, negotiates the protocol version, and round-trips a canned <code>get_state</code>{" "}
+        command.
+      </p>
+      <button type="button" onClick={() => void run()} disabled={phase === "starting"}>
+        {phase === "starting" ? "Running…" : "Run round-trip"}
+      </button>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      {error && <p className="error">{error}</p>}
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      {result && (
+        <section>
+          <h2>
+            omp {result.info.version} <small>({result.info.source})</small>
+          </h2>
+          <p className="path">{result.info.path}</p>
+          <h3>ready frame</h3>
+          <pre>{JSON.stringify(result.ready, null, 2)}</pre>
+          <h3>negotiated protocol version</h3>
+          <pre>{result.negotiated}</pre>
+          <h3>get_state response (raw)</h3>
+          <pre>{JSON.stringify(result.canned, null, 2)}</pre>
+        </section>
+      )}
     </main>
   );
 }
