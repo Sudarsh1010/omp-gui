@@ -1,0 +1,23 @@
+import { defineConfig } from "vite-plus";
+
+export default defineConfig({
+  fmt: {},
+  lint: {
+    jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
+    rules: { "vite-plus/prefer-vite-plus-imports": "error" },
+    options: { typeAware: true, typeCheck: true },
+  },
+  run: {
+    cache: true,
+  },
+  // Keep vitest from descending into nix flake inputs and agent cache.
+  test: {
+    exclude: [
+      "**/node_modules/**",
+      "**/.direnv/**",
+      "**/.vp/**",
+      "**/.corepack/**",
+      "**/.agents/**",
+    ],
+  },
+});

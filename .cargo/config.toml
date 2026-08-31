@@ -1,0 +1,7 @@
+# DEVELOPER_DIR is pinned to Xcode.app (needed for bundling/signing), but the
+# xcbuild `xcrun` shim in PATH then resolves rustc's default linker to Xcode's
+# clang, which loses the nix SDK and library paths (`ld: library 'iconv' not
+# found`). Force a plain PATH lookup of `cc` so the nix stdenv wrapper is used
+# inside the dev shell (and the system compiler outside it).
+[target.aarch64-apple-darwin]
+linker = "cc"

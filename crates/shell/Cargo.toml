@@ -1,0 +1,18 @@
+[package]
+name = "shell"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "shell_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+parking_lot.workspace = true
+tauri.workspace = true
+tauri-plugin-opener.workspace = true
+serde.workspace = true
+serde_json.workspace = true
