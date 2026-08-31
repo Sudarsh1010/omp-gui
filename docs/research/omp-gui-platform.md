@@ -158,12 +158,12 @@ The ACP client bridge in `packages/coding-agent/src/modes/acp/acp-client-bridge.
 
 README mapping of omp tools to ACP routes [`README.md` lines 549–557]:
 
-| omp tool | ACP route |
-| --- | --- |
-| `bash` | `terminal/create` + `terminal/output` |
-| `read` | `fs/read_text_file` |
-| `write` | `fs/write_text_file` |
-| `edit`, `bash` | `session/request_permission` |
+| omp tool       | ACP route                             |
+| -------------- | ------------------------------------- |
+| `bash`         | `terminal/create` + `terminal/output` |
+| `read`         | `fs/read_text_file`                   |
+| `write`        | `fs/write_text_file`                  |
+| `edit`, `bash` | `session/request_permission`          |
 
 ### 2.4 Session update notifications
 
@@ -182,7 +182,7 @@ Tool-call kinds are classified as `read`, `edit`, `delete`, `move`, `search`, `e
 
 ### 2.5 Known ACP clients that work with omp
 
-The omp README states `omp acp` is meant to be spawned by an ACP client such as **Zed**'s `"agent_servers"` config [`README.md` lines 217–219, 549]. The ACP community client list includes Zed, VS Code extensions, Neovim plugins, JetBrains, and others [agentclientprotocol.com/get-started/clients]. Whether any specific client has been *tested* against omp is **UNVERIFIED** from primary sources beyond the Zed mention in the README.
+The omp README states `omp acp` is meant to be spawned by an ACP client such as **Zed**'s `"agent_servers"` config [`README.md` lines 217–219, 549]. The ACP community client list includes Zed, VS Code extensions, Neovim plugins, JetBrains, and others [agentclientprotocol.com/get-started/clients]. Whether any specific client has been _tested_ against omp is **UNVERIFIED** from primary sources beyond the Zed mention in the README.
 
 ---
 
@@ -299,7 +299,7 @@ omp is one engine behind four independent entry points — TUI, one-shot (`-p`),
 
 3. **Git repo lock.** `packages/coding-agent/src/utils/repo-lock.ts` serializes git mutations per repository root via an in-process write chain — protects VCS mutations within a process, not session data, and not across processes.
 
-4. **`hub` tool process supervision.** The `hub` tool's process supervision *is* shared across omp instances in a project: "the first process op starts a detached broker over a private socket under `~/.omp/run/daemons/<project-hash>/`; every omp instance in the project shares names, logs, and state. After the last omp process exits, the broker stops non-persistent processes and exits" [`docs/tools/hub.md` lines 140–146]. This covers `hub start`/`stop`/`logs`-supervised processes only, not omp sessions themselves.
+4. **`hub` tool process supervision.** The `hub` tool's process supervision _is_ shared across omp instances in a project: "the first process op starts a detached broker over a private socket under `~/.omp/run/daemons/<project-hash>/`; every omp instance in the project shares names, logs, and state. After the last omp process exits, the broker stops non-persistent processes and exits" [`docs/tools/hub.md` lines 140–146]. This covers `hub start`/`stop`/`logs`-supervised processes only, not omp sessions themselves.
 
 5. **Agent registry (intra-process only).** "For multiple concurrent top-level sessions in one process, pass a private `AgentRegistry` to each session. The default process-global registry admits only one `"Main"` identity per generation" [`docs/sdk.md` lines 120–123]. Per-process restriction; a GUI spawning one child process per session is unaffected.
 
@@ -356,8 +356,8 @@ Evidence:
 - `apps/server/package.json` depends on `"@anthropic-ai/claude-agent-sdk": "^0.3.170"` as a runtime dependency ([`apps/server/package.json` L25](https://github.com/pingdotgg/t3code/blob/2daff8c25adf701fddd062ae93b94cc57d420ec2/apps/server/package.json#L25)).
 - The workspace strips the SDK's bundled platform binaries because T3 always resolves the user's own Claude executable ([`pnpm-workspace.yaml` L91–L98](https://github.com/pingdotgg/t3code/blob/2daff8c25adf701fddd062ae93b94cc57d420ec2/pnpm-workspace.yaml#L91-L98)).
 - The Claude driver is registered as `claudeAgent`, managing the npm package `@anthropic-ai/claude-code` ([`apps/server/src/provider/Drivers/ClaudeDriver.ts` L74–L78](https://github.com/pingdotgg/t3code/blob/2daff8c25adf701fddd062ae93b94cc57d420ec2/apps/server/src/provider/Drivers/ClaudeDriver.ts#L74-L78)).
-- `ClaudeExecutable.ts` resolves `binaryPath` into a value the SDK can spawn directly: *"The SDK spawns the given path without a shell"* ([`apps/server/src/provider/Drivers/ClaudeExecutable.ts` L17–L27](https://github.com/pingdotgg/t3code/blob/2daff8c25adf701fddd062ae93b94cc57d420ec2/apps/server/src/provider/Drivers/ClaudeExecutable.ts#L17-L27)).
-- `ClaudeAdapter.ts` imports `query` and SDK message types; its doc comment: *"wraps `@anthropic-ai/claude-agent-sdk` query sessions behind the generic provider adapter contract"* ([`apps/server/src/provider/Layers/ClaudeAdapter.ts` L3–L7, L20–L21](https://github.com/pingdotgg/t3code/blob/2daff8c25adf701fddd062ae93b94cc57d420ec2/apps/server/src/provider/Layers/ClaudeAdapter.ts#L3-L21)).
+- `ClaudeExecutable.ts` resolves `binaryPath` into a value the SDK can spawn directly: _"The SDK spawns the given path without a shell"_ ([`apps/server/src/provider/Drivers/ClaudeExecutable.ts` L17–L27](https://github.com/pingdotgg/t3code/blob/2daff8c25adf701fddd062ae93b94cc57d420ec2/apps/server/src/provider/Drivers/ClaudeExecutable.ts#L17-L27)).
+- `ClaudeAdapter.ts` imports `query` and SDK message types; its doc comment: _"wraps `@anthropic-ai/claude-agent-sdk` query sessions behind the generic provider adapter contract"_ ([`apps/server/src/provider/Layers/ClaudeAdapter.ts` L3–L7, L20–L21](https://github.com/pingdotgg/t3code/blob/2daff8c25adf701fddd062ae93b94cc57d420ec2/apps/server/src/provider/Layers/ClaudeAdapter.ts#L3-L21)).
 
 Layering: **T3 server → Claude Agent SDK → spawned `claude` executable**. The exact byte protocol between SDK and binary is **UNVERIFIED** from the T3 repo; the SDK hides it behind `query(...)` and `SDKMessage` types.
 
