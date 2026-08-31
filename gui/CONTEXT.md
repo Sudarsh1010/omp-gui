@@ -9,7 +9,7 @@ One `omp --mode rpc-ui` subprocess and the single omp session it hosts. One proc
 _Avoid_: thread, conversation, tab
 **Shell Bridge**:
 The Tauri command/event channel between the app and the Rust shell (`omp_start`, `omp_send`, `omp_kill`; `omp:frame`, `omp:exit`). It carries rpc-ui frames opaquely — the shell never parses them. Typed via specta-generated bindings.
-_Avoid_: IPC (overloaded — includes the rpc-ui protocol that rides through the bridge)
+_Avoid_: IPC as a name for this channel alone (overloaded — the rpc-ui protocol rides through it). The `@omp-gui/ipc` package is the deliberate exception: it owns both channels, which is what its name spans.
 
 **Host Tool**:
 A tool the app registers with a session via `set_host_tools`, executed by the app (not omp) when omp issues a `host_tool_call`. The mechanism behind computer use and browser use.

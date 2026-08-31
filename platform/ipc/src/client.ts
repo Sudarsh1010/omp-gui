@@ -40,31 +40,31 @@ export function createIpcClient(bridge: ShellBridge): IpcClientImpl {
   return {
     async startSession(options?: RpcSessionOptions): Promise<IpcSessionHandle> {
       const info = await bridge.start();
+      const handlersFor = (sessionId: string) => {
+        let handlers = sessions.get(sessionId);
+        if (!handlers) {
+          handlers = { lines: new Set(), exits: new Set() };
+          sessions.set(sessionId, handlers);
+        }
+        return handlers;
+      };
 
       const transport: RpcTransport = {
         send: (line) => {
           void bridge.send(info.sessionId, line);
         },
         onLine: (handler) => {
-          let handlers = sessions.get(info.sessionId);
-          if (!handlers) {
-            handlers = { lines: new Set(), exits: new Set() };
-            sessions.set(info.sessionId, handlers);
-          }
+          const handlers = handlersFor(info.sessionId);
           handlers.lines.add(handler);
           return () => {
-            handlers?.lines.delete(handler);
+            handlers.lines.delete(handler);
           };
         },
         onExit: (handler) => {
-          let handlers = sessions.get(info.sessionId);
-          if (!handlers) {
-            handlers = { lines: new Set(), exits: new Set() };
-            sessions.set(info.sessionId, handlers);
-          }
+          const handlers = handlersFor(info.sessionId);
           handlers.exits.add(handler);
           return () => {
-            handlers?.exits.delete(handler);
+            handlers.exits.delete(handler);
           };
         },
       };

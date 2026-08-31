@@ -17,25 +17,21 @@ export function tauriBridge(): ShellBridge {
     kill: async (sessionId) => {
       await commands.ompKill(sessionId).then(unwrap);
     },
-    onFrame: (handler) => {
-      const pending = events.ompFrame.listen((event) => handler(event.payload));
-      return () => {
-        pending
-          .then((unlisten) => {
-            unlisten();
-          })
-          .catch(() => {});
-      };
-    },
-    onExit: (handler) => {
-      const pending = events.ompExit.listen((event) => handler(event.payload));
-      return () => {
-        pending
-          .then((unlisten) => {
-            unlisten();
-          })
-          .catch(() => {});
-      };
-    },
+    onFrame: (handler) => subscribe(events.ompFrame, handler),
+    onExit: (handler) => subscribe(events.ompExit, handler),
+  };
+}
+/** Events expose listen() as Promise<unlisten>; bridge handlers need a sync unsubscribe. */
+function subscribe<T>(
+  event: { listen: (cb: (e: { payload: T }) => void) => Promise<() => void> },
+  handler: (payload: T) => void,
+): () => void {
+  const pending = event.listen((e) => handler(e.payload));
+  return () => {
+    pending
+      .then((unlisten) => {
+        unlisten();
+      })
+      .catch(() => {});
   };
 }

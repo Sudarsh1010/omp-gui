@@ -119,9 +119,8 @@ fn resolve_omp_path(app: &AppHandle) -> Result<(PathBuf, OmpBinarySource), Bridg
     }
 
     Err(BridgeError::BinaryNotFound {
-        message:
-            "no omp binary found; run `node scripts/fetch-omp.mjs` or set OMP_GUI_OMP_PATH"
-                .into(),
+        message: "no omp binary found; run `node scripts/fetch-omp.mjs` or set OMP_GUI_OMP_PATH"
+            .into(),
     })
 }
 
@@ -146,14 +145,14 @@ pub struct OmpState {
 /// NDJSON stdout lines to the frontend as `omp:frame` events.
 #[tauri::command]
 #[specta::specta]
-pub fn omp_start(
-    app: AppHandle,
-    state: State<'_, OmpState>,
-) -> Result<OmpStartInfo, BridgeError> {
+pub fn omp_start(app: AppHandle, state: State<'_, OmpState>) -> Result<OmpStartInfo, BridgeError> {
     let (path, source) = resolve_omp_path(&app)?;
-    let cwd = app.path().home_dir().map_err(|e| BridgeError::SpawnFailed {
-        message: e.to_string(),
-    })?;
+    let cwd = app
+        .path()
+        .home_dir()
+        .map_err(|e| BridgeError::SpawnFailed {
+            message: e.to_string(),
+        })?;
 
     let mut child = Command::new(&path)
         .args(["--mode", "rpc-ui"])
@@ -183,7 +182,7 @@ pub fn omp_start(
         }
     });
 
-    let exit_app = app.clone();
+    let event_app = app.clone();
     let exit_session_id = session_id.clone();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines() {
@@ -195,14 +194,14 @@ pub fn omp_start(
                         session_id: exit_session_id.clone(),
                         line,
                     }
-                    .emit(&exit_app);
+                    .emit(&event_app);
                 }
                 Err(_) => break,
             }
         }
 
         let code = {
-            let state = exit_app.state::<OmpState>();
+            let state = event_app.state::<OmpState>();
             let mut children = state.children.lock();
             if let Some(mut child) = children.remove(&exit_session_id) {
                 child.child.wait().ok().and_then(|s| s.code()).unwrap_or(-1)
@@ -215,7 +214,7 @@ pub fn omp_start(
             session_id: exit_session_id,
             code,
         }
-        .emit(&exit_app);
+        .emit(&event_app);
     });
 
     state.children.lock().insert(
