@@ -1,7 +1,7 @@
+import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import "./App.css";
-import { killOmp, type OmpStartInfo, startOmp } from "./rpc/tauri-transport";
-import { RpcSession } from "./rpc/session-core";
+import { RpcSession } from "@gui/rpc/session-core";
+import { killOmp, OmpStartInfo, startOmp } from "@gui/rpc/tauri-transport";
 
 type Phase = "idle" | "starting" | "running" | "error";
 
@@ -12,7 +12,11 @@ interface RoundTrip {
   canned: unknown;
 }
 
-function App() {
+export const Route = createFileRoute("/")({
+  component: Index,
+});
+
+function Index() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [result, setResult] = useState<RoundTrip | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,8 +48,8 @@ function App() {
   }, [run]);
 
   return (
-    <main className="container">
-      <h1>omp-gui · T1 wire round-trip</h1>
+    <main className="mx-auto py-8 typeset typeset-docs max-w-[48em]">
+      <h1 >omp-gui · T1 wire round-trip</h1>
       <p>
         Spawns the pinned <code>omp --mode rpc-ui</code> subprocess, parses the <code>ready</code>{" "}
         frame, negotiates the protocol version, and round-trips a canned <code>get_state</code>{" "}
@@ -55,14 +59,14 @@ function App() {
         {phase === "starting" ? "Running…" : "Run round-trip"}
       </button>
 
-      {error && <p className="error">{error}</p>}
+      {error && <p >{error}</p>}
 
       {result && (
         <section>
           <h2>
             omp {result.info.version} <small>({result.info.source})</small>
           </h2>
-          <p className="path">{result.info.path}</p>
+          <p >{result.info.path}</p>
           <h3>ready frame</h3>
           <pre>{JSON.stringify(result.ready, null, 2)}</pre>
           <h3>negotiated protocol version</h3>
@@ -74,5 +78,3 @@ function App() {
     </main>
   );
 }
-
-export default App;
