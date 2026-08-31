@@ -1,0 +1,8 @@
+[package]
+name = "greet"
+description = "Scaffold demo command; delete when the first real feature crate lands"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tauri.workspace = true
