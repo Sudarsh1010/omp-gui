@@ -1,7 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouteContext } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { RpcSession } from "@gui/rpc/session-core";
-import { killOmp, OmpStartInfo, startOmp } from "@gui/rpc/tauri-transport";
+import type { OmpStartInfo } from "@omp-gui/ipc";
 
 type Phase = "idle" | "starting" | "running" | "error";
 
@@ -17,6 +16,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  const { ipc } = useRouteContext({ from: "__root__" });
   const [phase, setPhase] = useState<Phase>("idle");
   const [result, setResult] = useState<RoundTrip | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,22 +26,23 @@ function Index() {
     setResult(null);
     setError(null);
     try {
-      const { info, transport } = await startOmp();
-      const session = await RpcSession.start(transport, {
-        onExit: () => setPhase("idle"),
-      });
+      const handle = await ipc.startSession();
       // Canned command: proves the full byte path spawn → pipe → parse → render.
-      const canned = await session.command({ type: "get_state" });
-      setResult({ info, ready: session.ready, negotiated: session.protocolVersion, canned });
+      const canned = await handle.session.command({ type: "get_state" });
+      setResult({
+        info: handle.info,
+        ready: handle.session.ready,
+        negotiated: handle.session.protocolVersion,
+        canned,
+      });
       setPhase("running");
-      session.close();
-      await killOmp();
+      await handle.close();
       setPhase("idle");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setPhase("error");
     }
-  }, []);
+  }, [ipc]);
 
   useEffect(() => {
     void run();
@@ -49,7 +50,7 @@ function Index() {
 
   return (
     <main className="mx-auto py-8 typeset typeset-docs max-w-[48em]">
-      <h1 >omp-gui · T1 wire round-trip</h1>
+      <h1>omp-gui · T1 wire round-trip</h1>
       <p>
         Spawns the pinned <code>omp --mode rpc-ui</code> subprocess, parses the <code>ready</code>{" "}
         frame, negotiates the protocol version, and round-trips a canned <code>get_state</code>{" "}
@@ -59,14 +60,14 @@ function Index() {
         {phase === "starting" ? "Running…" : "Run round-trip"}
       </button>
 
-      {error && <p >{error}</p>}
+      {error && <p>{error}</p>}
 
       {result && (
         <section>
           <h2>
             omp {result.info.version} <small>({result.info.source})</small>
           </h2>
-          <p >{result.info.path}</p>
+          <p>{result.info.path}</p>
           <h3>ready frame</h3>
           <pre>{JSON.stringify(result.ready, null, 2)}</pre>
           <h3>negotiated protocol version</h3>

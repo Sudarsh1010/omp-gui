@@ -7,7 +7,8 @@
     "ready": "vp check && vp run -r test && vp run -r build",
     "dev": "vp run website#dev",
     "dev:gui": "vp run gui#tauri dev",
-    "build:gui": "vp run gui#tauri build"
+    "build:gui": "vp run gui#tauri build",
+    "typegen": "cargo test -p shell export_bindings"
   },
   "devDependencies": {
     "vite": "catalog:",
