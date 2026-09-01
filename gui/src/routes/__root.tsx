@@ -2,11 +2,11 @@ import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanst
 import appCss from "@omp-gui/ui/globals.css?url";
 import { TooltipProvider } from "@omp-gui/ui/components/tooltip";
 import type { QueryClient } from "@tanstack/react-query";
-import type { IpcClient } from "@omp-gui/ipc";
+import type { SessionsStore } from "@omp-gui/ipc";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
-  ipc: IpcClient;
+  sessionsStore: SessionsStore;
 }>()({
   head: () => ({
     links: [{ rel: "stylesheet", href: appCss }],
