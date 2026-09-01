@@ -27,6 +27,18 @@ export type {
 export { createSessionsStore } from "./session/sessions-store";
 export type { SessionsStore, SessionStatus, SessionSummary } from "./session/sessions-store";
 
+export {
+  ApprovalInbox,
+  ApprovalRegistry,
+  getApprovalRegistry,
+} from "./session/approvals";
+export type {
+  ApprovalAnswer,
+  ApprovalInboxSnapshot,
+  ApprovalRequest,
+  PendingApproval,
+} from "./session/approvals";
+
 export type {
   OmpStartInfo,
   OmpBinarySource,

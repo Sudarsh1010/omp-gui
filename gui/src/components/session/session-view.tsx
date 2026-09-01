@@ -2,6 +2,7 @@ import type { SessionsStore } from "@omp-gui/ipc";
 import { Alert, AlertDescription, AlertTitle } from "@omp-gui/ui/components/alert";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import { WarningIcon } from "@phosphor-icons/react";
+import { ApprovalInbox } from "@gui/components/session/approval-inbox";
 import { Composer } from "@gui/components/session/composer";
 import { TranscriptView } from "@gui/components/session/transcript-view";
 import { useSessionSummary, useSessionTranscript } from "@gui/session/use-sessions";
@@ -46,6 +47,7 @@ export function SessionView({ store, sessionId }: SessionViewProps) {
         </div>
       ) : (
         <>
+          <ApprovalInbox store={store} sessionId={sessionId} />
           <TranscriptView entries={snapshot.entries} className="flex-1" />
           <Composer
             running={snapshot.running}

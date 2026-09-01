@@ -15,6 +15,7 @@
 import type {
   RpcChunkFrame,
   RpcCommand,
+  RpcExtensionUIResponse,
   RpcReadyFrame,
   RpcResponse,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
@@ -265,6 +266,18 @@ export class RpcSession {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Answer a pending `extension_ui_request` by sending the correlated
+   * `extension_ui_response`. Unlike `command()`, this never waits for a
+   * `type: "response"` frame — the server has none to send for it; it
+   * resolves the request's own internal pending-dialog map and resumes
+   * the turn directly (protocol.md §5.4 "side-channel frames always
+   * overtake the queue").
+   */
+  respondToExtensionUi(response: RpcExtensionUIResponse): void {
+    this.transport.send(JSON.stringify(response));
   }
 
   /** Stop listening; does not kill the subprocess (transport owner's job). */
