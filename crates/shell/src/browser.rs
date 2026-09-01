@@ -3,8 +3,14 @@
 //! Per project, this module owns a headed Chrome-for-Testing process with a
 //! persistent `--user-data-dir` and an ephemeral `--remote-debugging-port`.
 //! omp's builtin browser tool attaches to that same port via its existing
-//! `connected`-kind CDP path (notes/browser.md §2, §9) — this module never
-//! talks to omp about it, it only launches Chromium and exposes the endpoint.
+//! `connected`-kind CDP path (notes/browser.md §2, §9). On launch this
+//! module hands omp that URL itself via `omp config set browser.cdpUrl`
+//! (`set_connected_cdp_config`, defined just after `browser_stop` below),
+//! and resets it once the project's last interested party stops the
+//! browser — the same short-lived-CLI-invocation lever `set_relay_config`
+//! (near the bottom of this file) uses for `browser.relay`, sharing its
+//! accepted gap: an omp session only reads config at its own startup (see
+//! `set_connected_cdp_config`'s doc comment).
 //!
 //! Separately, this module runs its *own* second CDP client (flatten-mode,
 //! ADR-0006) that starts a screencast on every page target and rebroadcasts
@@ -109,6 +115,7 @@ pub enum BrowserError {
     UnknownProject,
     RelayLaunchFailed { message: String },
     RelayConfigFailed { message: String },
+    CdpConfigFailed { message: String },
 }
 
 impl fmt::Display for BrowserError {
@@ -126,6 +133,9 @@ impl fmt::Display for BrowserError {
             }
             Self::RelayConfigFailed { message } => {
                 write!(f, "browser relay config failed: {message}")
+            }
+            Self::CdpConfigFailed { message } => {
+                write!(f, "browser CDP config failed: {message}")
             }
         }
     }
@@ -339,6 +349,19 @@ pub fn browser_launch(
     }
     let info = session.info(&key);
     sessions.insert(key, session);
+    drop(sessions);
+
+    // Best-effort: feed omp's builtin browser tool this project's CDP
+    // endpoint (see `set_connected_cdp_config`'s doc comment). A failed
+    // config write must not fail the launch itself — the pane's
+    // screencast and human Takeover driving both work with no dependency
+    // on omp ever attaching.
+    if let Ok((omp_path, _source)) = crate::omp::resolve_omp_path(&app) {
+        if let Err(_err) = set_connected_cdp_config(&omp_path, &app, Some(&info.cdp_url)) {
+            #[cfg(debug_assertions)]
+            eprintln!("[browser cdp-config] failed to set browser.cdpUrl: {_err}");
+        }
+    }
     Ok(info)
 }
 
@@ -349,6 +372,7 @@ pub fn browser_launch(
 #[tauri::command]
 #[specta::specta]
 pub fn browser_stop(
+    app: AppHandle,
     state: State<'_, BrowserState>,
     project_path: String,
 ) -> Result<(), BrowserError> {
@@ -366,6 +390,68 @@ pub fn browser_stop(
     };
     if should_remove {
         sessions.remove(&key);
+    }
+    drop(sessions);
+
+    if should_remove {
+        // Best-effort, mirroring the set call in `browser_launch`: reset
+        // `browser.cdpUrl` now that this project's last interested party
+        // has released the Chromium (see `set_connected_cdp_config`'s doc
+        // comment for why a failure here must not block the teardown).
+        if let Ok((omp_path, _source)) = crate::omp::resolve_omp_path(&app) {
+            if let Err(_err) = set_connected_cdp_config(&omp_path, &app, None) {
+                #[cfg(debug_assertions)]
+                eprintln!("[browser cdp-config] failed to reset browser.cdpUrl: {_err}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Feed omp's builtin browser tool this project's app-owned Chromium so its
+/// `connected`-kind CDP path (notes/browser.md §2, §9) can attach —
+/// `browser.cdpUrl` (`config/settings-schema.ts:4509-4519`; omp's settings
+/// resolution checks `browser.relay` *before* this key, so an enabled relay
+/// still wins). Mirrors `set_relay_config`'s `omp config set|reset` shape
+/// and its doc comment in full: this is a short-lived CLI invocation of the
+/// pinned binary, not an RPC call into a running `--mode rpc-ui` session,
+/// so a session already running when a Browser Pane launches or stops
+/// keeps whichever CDP config (or none) it resolved at its own startup —
+/// only omp sessions started *after* this call see it. That gap is
+/// accepted, not closed, by both `browser_launch` and `browser_stop`,
+/// which therefore treat every call here as best-effort.
+fn set_connected_cdp_config(
+    omp_path: &Path,
+    app: &AppHandle,
+    cdp_url: Option<&str>,
+) -> Result<(), BrowserError> {
+    let cwd = app
+        .path()
+        .home_dir()
+        .map_err(|e| BrowserError::CdpConfigFailed {
+            message: e.to_string(),
+        })?;
+    let mut args: Vec<&str> = vec!["config"];
+    match cdp_url {
+        Some(url) => args.extend(["set", "browser.cdpUrl", url]),
+        None => args.extend(["reset", "browser.cdpUrl"]),
+    }
+    let description = args.join(" ");
+    let output = Command::new(omp_path)
+        .args(&args)
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| BrowserError::CdpConfigFailed {
+            message: format!("failed to run {} {description}: {e}", omp_path.display()),
+        })?;
+    if !output.status.success() {
+        return Err(BrowserError::CdpConfigFailed {
+            message: format!(
+                "`omp {description}` exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim(),
+            ),
+        });
     }
     Ok(())
 }
@@ -985,10 +1071,9 @@ impl Drop for RelayDaemon {
 /// omp has no RPC command for mutating a *running* session's settings (see
 /// `set_relay_config`'s doc comment), so a session already streaming when
 /// this is called keeps whatever kind it resolved at its own startup — the
-/// same, already-accepted gap T9's `connected` CDP URL has today (this
-/// file's own doc: "this module never talks to omp about it"). `sessionId`
-/// is accepted now so every call site is ready the moment that wiring
-/// lands.
+/// same, already-accepted gap `set_connected_cdp_config` documents for T9's
+/// `connected` CDP URL. `sessionId` is accepted now so every call site is
+/// ready the moment a per-running-session config lever exists.
 #[tauri::command]
 #[specta::specta]
 pub fn browser_set_relay(
@@ -1217,7 +1302,9 @@ fn probe_relay_status(port: u16, timeout: Duration) -> Option<u16> {
 /// spawn or a project-directory change, never on the browser-tool path.
 /// Closing that gap — feeding a session's settings at spawn time — is
 /// session-lifecycle work belonging with `omp_start`, out of this module's
-/// scope; T9's `connected`-kind CDP URL has the identical, still-open gap.
+/// scope; `set_connected_cdp_config` (defined beside `browser_launch`/
+/// `browser_stop`, earlier in this file) wires T9's `connected`-kind CDP
+/// URL through this identical lever and shares this identical gap.
 fn set_relay_config(omp_path: &Path, app: &AppHandle, enabled: bool) -> Result<(), BrowserError> {
     let cwd = app
         .path()

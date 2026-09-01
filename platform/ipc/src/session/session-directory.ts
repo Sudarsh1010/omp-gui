@@ -87,6 +87,12 @@ export interface SessionDirectory {
   /** Register for change notifications: list refreshes and ownership
    * changes. Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
+  /** Unsubscribe from the store's change notifications and clear this
+   * directory's own listeners. Does not touch the store or any session
+   * this directory resumed — mirrors every other T7/2B controller's
+   * `dispose()` (`Transcript`, `ApprovalInbox`, `SubagentsStore`,
+   * `SteeringController`, `ModelSelection`). */
+  dispose(): void;
 }
 
 /**
@@ -170,7 +176,7 @@ export function createSessionDirectory(
     }
     if (released) notify();
   }
-  store.subscribe(reconcileClaims);
+  const unsubscribeStore = store.subscribe(reconcileClaims);
 
   return {
     list(): SessionFileEntry[] {
@@ -254,6 +260,10 @@ export function createSessionDirectory(
       return () => {
         listeners.delete(listener);
       };
+    },
+    dispose(): void {
+      unsubscribeStore();
+      listeners.clear();
     },
   };
 }

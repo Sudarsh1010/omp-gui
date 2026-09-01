@@ -10,10 +10,11 @@
 //! builtins that don't exist here anyway (ADR-0007: Rust owns raw bytes,
 //! not session-format parsing beyond what a UI surface strictly needs).
 //! `platform/ipc/src/bridge/node.ts`'s seam-test implementation of this
-//! same `ShellBridge.listSessionFiles` contract instead imports and reuses
-//! omp's real `listAllSessions` directly (it runs under Bun, not a Tauri
-//! webview) — this file is the production (webview) path's necessarily
-//! independent reimplementation, not a second copy of a shared algorithm.
+//! same `ShellBridge.listSessionFiles` contract is not a shared algorithm:
+//! it's its own independent pure-fs reimplementation (running under
+//! Node/vitest, not Bun; it never imports omp's real `listAllSessions`)
+//! that hand-mirrors this file's parsing logic field-by-field — two
+//! minimal parsers kept in sync by convention, not one shared one.
 //!
 //! ## Ownership registry split (ADR-0005)
 //!

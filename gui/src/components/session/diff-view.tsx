@@ -54,7 +54,7 @@ function DiffLineRow({ line }: { line: DiffLine }) {
     <div
       className={cn(
         "px-2",
-        line.kind === "add" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+        line.kind === "add" && "bg-success/10 text-success",
         line.kind === "remove" && "bg-destructive/10 text-destructive",
         (line.kind === "context" || line.kind === "other") && "text-foreground/80",
       )}

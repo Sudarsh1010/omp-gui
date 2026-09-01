@@ -8,7 +8,7 @@
  * feature's wiring local to this file instead of widening
  * `__root.tsx`/`main.tsx`'s shared router context for one sidebar section.
  */
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   createSessionDirectory,
   tauriBridge,
@@ -30,6 +30,7 @@ export function useSessionDirectory(store: SessionsStore): {
   refresh: () => Promise<void>;
 } {
   const directory = useMemo(() => createSessionDirectory(tauriBridge(), store), [store]);
+  useEffect(() => directory.dispose, [directory]);
   const entries = useSyncExternalStore(directory.subscribe, directory.list);
   const [refreshing, setRefreshing] = useState(false);
 

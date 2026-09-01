@@ -79,7 +79,7 @@ const STATUS_ICON: Record<SubagentStatus, typeof CircleIcon> = {
 const STATUS_ICON_CLASS: Record<SubagentStatus, string> = {
   pending: "text-muted-foreground",
   running: "animate-spin text-primary",
-  completed: "text-emerald-600 dark:text-emerald-500",
+  completed: "text-success",
   failed: "text-destructive",
   aborted: "text-muted-foreground",
 };
@@ -189,10 +189,12 @@ export function SubagentPanel({ store, sessionId }: SubagentPanelProps) {
 function SubagentRow({ summary, onSelect }: { summary: SubagentSummary; onSelect: () => void }) {
   const StatusIcon = STATUS_ICON[summary.status];
   return (
-    <button
-      type="button"
+    <Item
+      variant="outline"
+      size="sm"
+      render={<button type="button" />}
       onClick={onSelect}
-      className="group/item flex w-full items-center gap-2.5 border border-border px-3 py-2 text-left text-xs transition-colors hover:bg-muted focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="text-left hover:bg-muted"
     >
       <ItemMedia>
         <StatusIcon weight="fill" className={cn("size-3.5", STATUS_ICON_CLASS[summary.status])} />
@@ -213,7 +215,7 @@ function SubagentRow({ summary, onSelect }: { summary: SubagentSummary; onSelect
         </Badge>
         <CaretRightIcon className="size-3.5 text-muted-foreground" />
       </ItemActions>
-    </button>
+    </Item>
   );
 }
 

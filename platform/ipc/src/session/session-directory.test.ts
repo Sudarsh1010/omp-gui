@@ -38,14 +38,13 @@ const binary =
 
 /**
  * Mirrors `crates/shell/src/sessions.rs`'s `sessions_root` and
- * `bridge/node.ts`'s reliance on `listAllSessions`'s identical resolution
- * (`@oh-my-pi/pi-utils`'s `dirs.ts` default, non-profile, non-XDG):
- * `PI_CODING_AGENT_DIR` wins outright, else `$HOME/<PI_CONFIG_DIR or
- * .omp>/agent/sessions`. Computed here rather than importing
+ * `bridge/node.ts`'s own `sessionsRoot()` — both hand-roll the identical
+ * resolution (`@oh-my-pi/pi-utils`'s `dirs.ts` default, non-profile,
+ * non-XDG): `PI_CODING_AGENT_DIR` wins outright, else `$HOME/<PI_CONFIG_DIR
+ * or .omp>/agent/sessions`. Computed here rather than importing
  * `getSessionsDir` from `@oh-my-pi/pi-utils` directly because that package
  * isn't `platform/ipc`'s own declared dependency (only the pinned
- * `@oh-my-pi/pi-coding-agent` is) and `listAllSessions` doesn't expose the
- * root it resolves internally.
+ * `@oh-my-pi/pi-coding-agent` is).
  */
 function resolveSessionsRoot(): string {
   const override = process.env.PI_CODING_AGENT_DIR?.trim();
