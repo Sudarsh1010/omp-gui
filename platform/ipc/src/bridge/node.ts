@@ -6,8 +6,119 @@
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { open } from "node:fs/promises";
+import { listAllSessions } from "@oh-my-pi/pi-coding-agent/session/session-listing";
+import { FileSessionStorage } from "@oh-my-pi/pi-coding-agent/session/session-storage";
 import type { ShellBridge, OmpStartInfo } from "./shell-bridge";
-import type { OmpFrameEvent, OmpExitEvent } from "../bindings/bindings.gen";
+import type {
+  OmpFrameEvent,
+  OmpExitEvent,
+  SessionFileEntry,
+  SessionPreview,
+  SessionPreviewMessage,
+} from "../bindings/bindings.gen";
+
+/** Mirrors `crates/shell/src/sessions.rs`'s scan window constants exactly,
+ * so the switcher's "view read-only" affordance behaves the same
+ * regardless of which bridge backs the app. */
+const PREVIEW_SCAN_BYTES = 262_144;
+const PREVIEW_MAX_MESSAGES = 40;
+const PREVIEW_MAX_TEXT_CHARS = 4000;
+
+/**
+ * `listAllSessions`'s own `SessionInfo` (`session-listing.ts`) carries far
+ * more than the switcher needs (message counts, full transcript text,
+ * derived lifecycle status) — down-mapped here to the same lightweight
+ * `SessionFileEntry` shape `crates/shell/src/sessions.rs`'s independent,
+ * Tauri-webview-side reimplementation produces, so `session-directory.ts`
+ * never has to know which bridge it's talking to.
+ */
+function toSessionFileEntry(info: {
+  path: string;
+  id: string;
+  cwd: string;
+  title?: string;
+  created: Date;
+  modified: Date;
+  size: number;
+}): SessionFileEntry {
+  return {
+    path: info.path,
+    id: info.id,
+    cwd: info.cwd,
+    title: info.title ?? null,
+    createdAt: Number.isNaN(info.created.getTime()) ? null : info.created.toISOString(),
+    modifiedAt: Math.floor(info.modified.getTime() / 1000),
+    sizeBytes: info.size,
+  };
+}
+
+/** Reads up to `maxBytes + 1` bytes from the start of `path`; `hitCap` is
+ * true when the file is larger than `maxBytes` (a genuine prefix, not the
+ * whole file) — mirrors `sessions.rs`'s `read_prefix` exactly. */
+async function readPrefix(path: string, maxBytes: number): Promise<{ text: string; hitCap: boolean }> {
+  const handle = await open(path, "r");
+  try {
+    const buf = Buffer.alloc(maxBytes + 1);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    const hitCap = bytesRead > maxBytes;
+    return { text: buf.subarray(0, Math.min(bytesRead, maxBytes)).toString("utf8"), hitCap };
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Narrows an unknown `content` array element to a `{type:"text",text}`
+ * block using `in`-checked property access rather than a cast. */
+function isTextContentBlock(block: unknown): block is { type: "text"; text: string } {
+  if (typeof block !== "object" || block === null) return false;
+  if (!("type" in block) || !("text" in block)) return false;
+  return block.type === "text" && typeof block.text === "string";
+}
+
+/** Concatenates every `type:"text"` content block's text (thinking/
+ * toolCall/image blocks skipped — a readable preview, not a faithful
+ * replay); `content` may also be a bare string on older/simple messages. */
+function extractPreviewText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter(isTextContentBlock)
+    .map((block) => block.text)
+    .join("\n");
+}
+
+async function readSessionPreviewFromDisk(path: string): Promise<SessionPreview> {
+  const { text: prefix, hitCap: hitByteCap } = await readPrefix(path, PREVIEW_SCAN_BYTES);
+  const messages: SessionPreviewMessage[] = [];
+  let hitMessageCap = false;
+
+  for (const line of prefix.split("\n")) {
+    if (messages.length >= PREVIEW_MAX_MESSAGES) {
+      hitMessageCap = true;
+      break;
+    }
+    let record: Record<string, unknown>;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (record.type !== "message") continue;
+    const { message } = record;
+    if (typeof message !== "object" || message === null) continue;
+    if (!("role" in message) || !("content" in message)) continue;
+    const { role, content } = message;
+    if (typeof role !== "string" || (role !== "user" && role !== "assistant")) continue;
+    const text = extractPreviewText(content);
+    if (!text) continue;
+    const clipped =
+      text.length > PREVIEW_MAX_TEXT_CHARS ? `${text.slice(0, PREVIEW_MAX_TEXT_CHARS)}\u2026` : text;
+    messages.push({ role, text: clipped });
+  }
+
+  return { path, messages, truncated: hitMessageCap || hitByteCap };
+}
 
 interface Session {
   child: ChildProcess;
@@ -89,6 +200,18 @@ export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
       session.cleanup();
       session.child.kill();
       sessions.delete(sessionId);
+      // `cleanup()` just unsubscribed the child's own "exit" listener (so the
+      // natural exit detected later doesn't double-fire this), which means
+      // nothing else reports this exit unless it's emitted here explicitly —
+      // mirrors `omp_kill`'s unconditional `OmpExitEvent{ code: -1 }.emit(&app)`
+      // in `crates/shell/src/omp.rs`, keeping this bridge's `onExit` contract
+      // consistent with the Tauri one for any caller that kills a session
+      // without first calling `RpcSession.close()` (which itself already
+      // detaches from the transport, so a `SessionsStore.closeSession()` ->
+      // `IpcSessionHandle.close()` teardown never reaches this regardless —
+      // see `session-directory.ts`'s module doc for why that path instead
+      // watches `SessionsStore.list()`/status).
+      emitExit(sessionId, -1);
       return Promise.resolve();
     },
 
@@ -101,5 +224,12 @@ export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
       exitHandlers.add(handler);
       return () => exitHandlers.delete(handler);
     },
+
+    async listSessionFiles(): Promise<SessionFileEntry[]> {
+      const infos = await listAllSessions(new FileSessionStorage());
+      return infos.map(toSessionFileEntry);
+    },
+
+    readSessionPreview: (path: string) => readSessionPreviewFromDisk(path),
   };
 }

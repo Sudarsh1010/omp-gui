@@ -36,4 +36,16 @@ export type {
   BrowserInfo,
   BrowserError,
   RelayInfo,
+  SessionFileEntry,
+  SessionsError,
+  ForeignLockProbe,
+  SessionPreview,
+  SessionPreviewMessage,
 } from "./bindings/bindings.gen";
+
+export { createSessionDirectory } from "./session/session-directory";
+export type {
+  SessionDirectory,
+  SessionOwnership,
+  ResumeResult,
+} from "./session/session-directory";

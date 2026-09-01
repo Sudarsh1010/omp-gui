@@ -41,6 +41,7 @@ export function AppShell({ store }: AppShellProps) {
         onCreate={createSession}
         onSelect={selectSession}
         onClose={closeSession}
+        store={store}
       />
       <SidebarInset>
         <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-2">

@@ -1,5 +1,6 @@
 mod browser;
 mod omp;
+mod sessions;
 /// The single specta builder shared by the runtime and the bindings export
 /// test, so the checked-in bindings can never drift from the live handler.
 fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
@@ -12,6 +13,9 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             browser::browser_stop,
             browser::browser_set_relay,
             browser::browser_set_takeover,
+            sessions::list_session_files,
+            sessions::probe_foreign_session_lock,
+            sessions::read_session_preview,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,

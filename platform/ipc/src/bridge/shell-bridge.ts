@@ -6,9 +6,24 @@ import type {
   BrowserInfo,
   BrowserError,
   RelayInfo,
+  SessionFileEntry,
+  SessionsError,
+  ForeignLockProbe,
+  SessionPreview,
 } from "../bindings/bindings.gen";
 
-export type { OmpStartInfo, OmpFrameEvent, OmpExitEvent, BrowserInfo, BrowserError, RelayInfo };
+export type {
+  OmpStartInfo,
+  OmpFrameEvent,
+  OmpExitEvent,
+  BrowserInfo,
+  BrowserError,
+  RelayInfo,
+  SessionFileEntry,
+  SessionsError,
+  ForeignLockProbe,
+  SessionPreview,
+};
 
 export interface ShellBridge {
   /** Spawn a subprocess and return its identity metadata. */
@@ -47,6 +62,32 @@ export interface ShellBridge {
    * the same reason as `browserLaunch`/`browserStop`.
    */
   browserSetTakeover?(projectPath: string, enabled: boolean): Promise<void>;
+  /**
+   * Enumerate every on-disk session file across all projects, newest-first,
+   * without spawning omp (T7, issue #8). Optional: only the real Tauri
+   * shell can walk the filesystem directly from a webview; `nodeBridge`
+   * implements it too (against the same on-disk layout, via the pinned
+   * package's own `listAllSessions`) since the seam tests drive this
+   * without Tauri at all — a bridge with neither has no session directory
+   * feature to offer.
+   */
+  listSessionFiles?(): Promise<SessionFileEntry[]>;
+  /**
+   * Best-effort scan for an OS process — other than one this app itself
+   * spawned — holding `path` open (ADR-0005's single-writer guard).
+   * Tauri-only: asking the OS which process has a file open is not
+   * something `nodeBridge`'s seam tests need — they exercise the
+   * deterministic half of the guard (`session-directory.ts`'s own
+   * in-memory ownership registry) against two real, app-driven
+   * subprocesses instead.
+   */
+  probeForeignSessionLock?(path: string): Promise<ForeignLockProbe>;
+  /**
+   * Read-only bounded reconstruction of a session's early messages, for
+   * the switcher's "view read-only" affordance on a guarded file. Optional
+   * for the same reason as `listSessionFiles`.
+   */
+  readSessionPreview?(path: string): Promise<SessionPreview>;
 }
 
 /**

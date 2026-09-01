@@ -6,7 +6,7 @@
 use parking_lot::Mutex;
 use serde::Serialize;
 use specta::Type;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -143,6 +143,17 @@ impl Drop for OmpChild {
 #[derive(Default)]
 pub struct OmpState {
     children: Mutex<HashMap<String, OmpChild>>,
+}
+
+impl OmpState {
+    /// PIDs of every subprocess this app currently has running, for
+    /// `sessions::probe_foreign_session_lock` to exclude from its
+    /// foreign-lock scan (ADR-0005): a PID we spawned ourselves isn't
+    /// "another live process" even though it does hold the session file
+    /// open.
+    pub(crate) fn child_pids(&self) -> HashSet<u32> {
+        self.children.lock().values().map(|c| c.child.id()).collect()
+    }
 }
 
 /// Spawn the pinned omp binary as an rpc-ui subprocess and start piping raw
