@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Protocol smoke suite (ADR-0008)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Gates the live-model cycles in platform/ipc/src/session/smoke.test.ts
+      # (prompt round trip, steer, abort, host-tool cycle, extension-ui
+      # cycle, subagent frames). Without this secret configured on the repo,
+      # those tests are skipped and only framing/negotiation still runs.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch pinned omp binary
+        run: node scripts/fetch-omp.mjs
+
+      - name: tsc + protocol smoke suite
+        run: pnpm run smoke

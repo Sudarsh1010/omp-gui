@@ -8,7 +8,8 @@
     "dev": "vp run website#dev",
     "dev:gui": "vp run gui#tauri dev",
     "build:gui": "vp run gui#tauri build",
-    "typegen": "cargo test -p shell export_bindings"
+    "typegen": "cargo test -p shell export_bindings",
+    "smoke": "pnpm --filter @omp-gui/ipc run typecheck && pnpm --filter @omp-gui/ipc run test"
   },
   "devDependencies": {
     "vite": "catalog:",

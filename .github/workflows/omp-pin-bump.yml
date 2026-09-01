@@ -1,0 +1,141 @@
+name: Weekly omp pin bump
+
+on:
+  schedule:
+    # Every Monday 06:00 UTC. See docs/adr/0008-weekly-pin-bump-smoke-gate.md
+    # for why weekly (not daily, not a longer cadence).
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: omp-pin-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump pinned omp release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Resolve latest omp release and rewrite the pin
+        id: bump
+        run: |
+          node scripts/bump-omp-pin.mjs
+          if git diff --quiet -- omp-pin.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$(node -p "require('./omp-pin.json').version")" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Re-lock dependencies against the new pin
+        if: steps.bump.outputs.changed == 'true'
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Fetch the newly pinned omp binary
+        if: steps.bump.outputs.changed == 'true'
+        run: node scripts/fetch-omp.mjs --force
+
+      - name: tsc + protocol smoke suite (ADR-0008 gate)
+        if: steps.bump.outputs.changed == 'true'
+        run: pnpm run smoke
+
+      # peter-evans/create-pull-request defaults to the job's GITHUB_TOKEN.
+      # Commits authored by that token do not themselves trigger .github/workflows/ci.yml
+      # (a GitHub Actions limitation), so if branch protection requires ci.yml's
+      # check before merging, add an OMP_PIN_BUMP_TOKEN secret (a PAT or GitHub
+      # App token with repo + workflow scope) and it will be used here instead.
+      - name: Open the bump PR
+        id: cpr
+        if: steps.bump.outputs.changed == 'true' && success()
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.OMP_PIN_BUMP_TOKEN || secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump pinned omp to ${{ steps.bump.outputs.version }}"
+          branch: omp-pin-bump/${{ steps.bump.outputs.version }}
+          title: "chore: bump pinned omp to ${{ steps.bump.outputs.version }}"
+          body: |
+            Automated weekly pin bump (ADR-0008).
+
+            - `omp-pin.json` and `platform/ipc/package.json` now point at
+              `can1357/oh-my-pi` release `${{ steps.bump.outputs.version }}`.
+            - `tsc` and the protocol smoke suite (`platform/ipc`) passed against
+              the new binary before this PR was opened.
+
+            Changelog: https://github.com/can1357/oh-my-pi/releases/tag/v${{ steps.bump.outputs.version }}
+          add-paths: |
+            omp-pin.json
+            platform/ipc/package.json
+            pnpm-lock.yaml
+          delete-branch: true
+
+      - name: Enable auto-merge
+        if: steps.bump.outputs.changed == 'true' && success() && steps.cpr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ secrets.OMP_PIN_BUMP_TOKEN || secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "${{ steps.cpr.outputs.pull-request-number }}"
+
+      - name: Surface a red run to a human
+        if: steps.bump.outputs.changed == 'true' && failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = "${{ steps.bump.outputs.version }}";
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const changelogUrl = `https://github.com/can1357/oh-my-pi/releases/tag/v${version}`;
+            const title = `omp pin bump to ${version} failed tsc/smoke gate`;
+            const body = [
+              `The weekly omp pin bump to \`${version}\` failed \`tsc\` and/or the protocol smoke suite (ADR-0008).`,
+              "",
+              `- Failed run: ${runUrl}`,
+              `- omp changelog: ${changelogUrl}`,
+              "",
+              "A human needs to check what changed upstream before this pin can move.",
+            ].join("\n");
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+            });
+            const existing = open.data.find((issue) => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `Still failing as of this run.\n\n${body}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                labels: ["ready-for-human"],
+                body,
+              });
+            }
