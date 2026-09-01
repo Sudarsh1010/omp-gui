@@ -77,3 +77,19 @@ export type {
   SessionModel,
   SessionThinkingLevel,
 } from "./session/models";
+export {
+  SubagentsStore,
+  SubagentTracker,
+  getSubagentTracker,
+} from "./session/subagents";
+export type {
+  SubagentSummary,
+  SubagentStatus,
+  SubagentProgress,
+  SubagentStreamEntry,
+  SubagentMessageEntry,
+  SubagentThinkingEntry,
+  SubagentToolEntry,
+  SubagentToolStatus,
+  SubagentNoticeEntry,
+} from "./session/subagents";
