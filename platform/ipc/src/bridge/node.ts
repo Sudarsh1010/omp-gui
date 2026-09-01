@@ -6,9 +6,9 @@
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { open } from "node:fs/promises";
-import { listAllSessions } from "@oh-my-pi/pi-coding-agent/session/session-listing";
-import { FileSessionStorage } from "@oh-my-pi/pi-coding-agent/session/session-storage";
+import { open, readdir, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ShellBridge, OmpStartInfo } from "./shell-bridge";
 import type {
   OmpFrameEvent,
@@ -24,32 +24,93 @@ import type {
 const PREVIEW_SCAN_BYTES = 262_144;
 const PREVIEW_MAX_MESSAGES = 40;
 const PREVIEW_MAX_TEXT_CHARS = 4000;
+/** `.jsonl` only — matches `sessions.rs`'s `SESSION_SUFFIX` (GC-compressed
+ * `.jsonl.gz` archives and `.bak` backups are excluded). */
+const SESSION_SUFFIX = ".jsonl";
+/** Header-scan window, matching `sessions.rs`'s `HEADER_SCAN_BYTES`. */
+const HEADER_SCAN_BYTES = 4096;
 
 /**
- * `listAllSessions`'s own `SessionInfo` (`session-listing.ts`) carries far
- * more than the switcher needs (message counts, full transcript text,
- * derived lifecycle status) — down-mapped here to the same lightweight
- * `SessionFileEntry` shape `crates/shell/src/sessions.rs`'s independent,
- * Tauri-webview-side reimplementation produces, so `session-directory.ts`
- * never has to know which bridge it's talking to.
+ * The sessions root a spawned `omp` subprocess would itself resolve to,
+ * mirroring `sessions.rs`'s `sessions_root` (and `@oh-my-pi/pi-utils`'s
+ * `dirs.ts` default): `PI_CODING_AGENT_DIR` wins outright if non-empty,
+ * else `$HOME/<PI_CONFIG_DIR or .omp>/agent/sessions`.
  */
-function toSessionFileEntry(info: {
-  path: string;
-  id: string;
-  cwd: string;
-  title?: string;
-  created: Date;
-  modified: Date;
-  size: number;
-}): SessionFileEntry {
+function sessionsRoot(): string {
+  const explicit = process.env.PI_CODING_AGENT_DIR?.trim();
+  if (explicit) return join(explicit, "sessions");
+  const configDir = process.env.PI_CONFIG_DIR?.trim() || ".omp";
+  return join(homedir(), configDir, "agent", "sessions");
+}
+
+interface SessionHeader {
+  id: string | null;
+  cwd: string | null;
+  title: string | null;
+  createdAt: string | null;
+}
+
+/** Parses a bounded prefix for its `title` override record and `session`
+ * header record, mirroring `sessions.rs`'s `parse_session_header`: line 1 is
+ * typically a `{"type":"title",...}` cache entry, line 2 the
+ * `{"type":"session",...}` header. Scanned defensively across all lines. */
+function parseSessionHeader(prefix: string): SessionHeader {
+  let id: string | null = null;
+  let cwd: string | null = null;
+  let sessionTitle: string | null = null;
+  let titleOverride: string | null = null;
+  let createdAt: string | null = null;
+  for (const line of prefix.split("\n")) {
+    let value: Record<string, unknown>;
+    try {
+      value = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (value.type === "title") {
+      if (typeof value.title === "string") titleOverride = value.title;
+    } else if (value.type === "session") {
+      id = typeof value.id === "string" ? value.id : null;
+      cwd = typeof value.cwd === "string" ? value.cwd : null;
+      sessionTitle = typeof value.title === "string" ? value.title : null;
+      createdAt = typeof value.timestamp === "string" ? value.timestamp : null;
+    }
+  }
+  return { id, cwd, title: titleOverride ?? sessionTitle, createdAt };
+}
+
+/** Falls back to the id embedded in a `<timestamp>_<uuid>.jsonl` filename
+ * (mirrors `sessions.rs`'s `session_id_from_filename`) when a file's header
+ * can't be read or parsed. */
+function sessionIdFromFilename(fileName: string): string {
+  const stem = fileName.endsWith(SESSION_SUFFIX)
+    ? fileName.slice(0, -SESSION_SUFFIX.length)
+    : fileName;
+  const underscore = stem.lastIndexOf("_");
+  const tail = underscore >= 0 ? stem.slice(underscore + 1) : "";
+  return tail || stem;
+}
+
+/** Builds one `SessionFileEntry` from disk, mirroring `sessions.rs`'s
+ * `read_session_entry` (mtime as Unix **seconds**, size clamped to u32,
+ * header `timestamp` relayed verbatim). Returns null if the file can't be
+ * stat'd, so a single unreadable file never fails the whole scan. */
+async function readSessionEntryFromDisk(
+  path: string,
+  fileName: string,
+): Promise<SessionFileEntry | null> {
+  const stats = await stat(path).catch(() => null);
+  if (!stats) return null;
+  const { text: prefix } = await readPrefix(path, HEADER_SCAN_BYTES);
+  const header = parseSessionHeader(prefix);
   return {
-    path: info.path,
-    id: info.id,
-    cwd: info.cwd,
-    title: info.title ?? null,
-    createdAt: Number.isNaN(info.created.getTime()) ? null : info.created.toISOString(),
-    modifiedAt: Math.floor(info.modified.getTime() / 1000),
-    sizeBytes: info.size,
+    path,
+    id: header.id ?? sessionIdFromFilename(fileName),
+    cwd: header.cwd ?? "",
+    title: header.title,
+    createdAt: header.createdAt,
+    modifiedAt: Math.floor(stats.mtimeMs / 1000),
+    sizeBytes: Math.min(stats.size, 0xffffffff),
   };
 }
 
@@ -231,8 +292,25 @@ export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
     },
 
     async listSessionFiles(): Promise<SessionFileEntry[]> {
-      const infos = await listAllSessions(new FileSessionStorage());
-      return infos.map(toSessionFileEntry);
+      // Mirrors `sessions.rs`'s `list_session_files`: walk root/<project>/*.jsonl,
+      // a bounded header read per file, newest-first; a missing root yields [].
+      const root = sessionsRoot();
+      const projectDirs = await readdir(root, { withFileTypes: true }).catch(() => null);
+      if (!projectDirs) return [];
+      const out: SessionFileEntry[] = [];
+      for (const projectDir of projectDirs) {
+        if (!projectDir.isDirectory()) continue;
+        const projectPath = join(root, projectDir.name);
+        const files = await readdir(projectPath).catch(() => null);
+        if (!files) continue;
+        for (const fileName of files) {
+          if (!fileName.endsWith(SESSION_SUFFIX)) continue;
+          const entry = await readSessionEntryFromDisk(join(projectPath, fileName), fileName);
+          if (entry) out.push(entry);
+        }
+      }
+      out.sort((a, b) => b.modifiedAt - a.modifiedAt);
+      return out;
     },
 
     readSessionPreview: (path: string) => readSessionPreviewFromDisk(path),

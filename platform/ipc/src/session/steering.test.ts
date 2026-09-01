@@ -197,8 +197,8 @@ describe("SteeringController queue modes (no live model needed)", () => {
       expect(controller.getSnapshot()).toMatchObject({
         ready: true,
         queueModes: {
-          steeringMode: "one-at-a-time",
-          followUpMode: "one-at-a-time",
+          steeringMode: "all",
+          followUpMode: "all",
           interruptMode: "immediate",
         },
         queuedMessageCount: 0,

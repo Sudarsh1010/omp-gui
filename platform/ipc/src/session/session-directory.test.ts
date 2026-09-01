@@ -120,8 +120,8 @@ describe("SessionDirectory against the pinned omp binary", () => {
     return sandbox;
   }
 
-  function makeFixture(title: string): { path: string } {
-    const { path, projectDir } = writeFixtureSessionFile(makeSandbox(), title);
+  function makeFixture(title: string, cwd: string = makeSandbox()): { path: string } {
+    const { path, projectDir } = writeFixtureSessionFile(cwd, title);
     projectDirs.push(projectDir);
     return { path };
   }
@@ -154,8 +154,9 @@ describe("SessionDirectory against the pinned omp binary", () => {
   });
 
   it("switch_session resumes a selected session", async () => {
-    const fixture = makeFixture("Resume fixture");
-    const bridge = nodeBridge(binary, makeSandbox());
+    const sandbox = makeSandbox();
+    const fixture = makeFixture("Resume fixture", sandbox);
+    const bridge = nodeBridge(binary, sandbox);
     store = createSessionsStore(createIpcClient(bridge));
     const directory = createSessionDirectory(bridge, store);
 
@@ -175,8 +176,9 @@ describe("SessionDirectory against the pinned omp binary", () => {
   }, 30_000);
 
   it("refuses to drive a file already open in this app and offers read-only", async () => {
-    const fixture = makeFixture("Guard fixture");
-    const bridge = nodeBridge(binary, makeSandbox());
+    const sandbox = makeSandbox();
+    const fixture = makeFixture("Guard fixture", sandbox);
+    const bridge = nodeBridge(binary, sandbox);
     store = createSessionsStore(createIpcClient(bridge));
     const directory = createSessionDirectory(bridge, store);
 
@@ -199,8 +201,9 @@ describe("SessionDirectory against the pinned omp binary", () => {
   }, 30_000);
 
   it("releases ownership once the driving session closes", async () => {
-    const fixture = makeFixture("Release fixture");
-    const bridge = nodeBridge(binary, makeSandbox());
+    const sandbox = makeSandbox();
+    const fixture = makeFixture("Release fixture", sandbox);
+    const bridge = nodeBridge(binary, sandbox);
     store = createSessionsStore(createIpcClient(bridge));
     const directory = createSessionDirectory(bridge, store);
 
