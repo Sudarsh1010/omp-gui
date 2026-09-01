@@ -38,6 +38,15 @@ export type {
   ApprovalRequest,
   PendingApproval,
 } from "./session/approvals";
+export { createSteeringController } from "./session/steering";
+export type {
+  QueueDrainMode,
+  QueueModes,
+  SteeringController,
+  SteeringInterruptMode,
+  SteeringPending,
+  SteeringSnapshot,
+} from "./session/steering";
 
 export type {
   OmpStartInfo,
