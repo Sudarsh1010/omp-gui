@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-01",
+  "title": "Design System: omp-gui (working title)",
+  "extensions": {
+    "colorMeta": {
+      "working-emerald": {
+        "role": "primary",
+        "displayName": "Working Emerald",
+        "canonical": "oklch(0.508 0.118 165.612)",
+        "tonalRamp": [
+          "oklch(0.25 0.06 166)",
+          "oklch(0.35 0.08 166.5)",
+          "oklch(0.432 0.095 166.913)",
+          "oklch(0.508 0.118 165.612)",
+          "oklch(0.596 0.145 163.225)",
+          "oklch(0.696 0.17 162.48)",
+          "oklch(0.845 0.143 164.978)",
+          "oklch(0.95 0.05 166)"
+        ]
+      },
+      "emerald-wash": {
+        "role": "primary-foreground",
+        "displayName": "Emerald Wash",
+        "canonical": "oklch(0.979 0.021 166.113)",
+        "tonalRamp": [
+          "oklch(0.25 0.03 166)",
+          "oklch(0.38 0.04 166)",
+          "oklch(0.5 0.045 166)",
+          "oklch(0.62 0.045 166)",
+          "oklch(0.74 0.04 166)",
+          "oklch(0.85 0.035 166)",
+          "oklch(0.93 0.028 166)",
+          "oklch(0.979 0.021 166.113)"
+        ]
+      },
+      "paper": {
+        "role": "background",
+        "displayName": "Paper",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.27 0 0)",
+          "oklch(0.39 0 0)",
+          "oklch(0.51 0 0)",
+          "oklch(0.63 0 0)",
+          "oklch(0.76 0 0)",
+          "oklch(0.88 0 0)",
+          "oklch(0.97 0 0)"
+        ]
+      },
+      "stone-ink": {
+        "role": "foreground",
+        "displayName": "Stone Ink",
+        "canonical": "oklch(0.147 0.004 49.25)",
+        "tonalRamp": [
+          "oklch(0.147 0.004 49.25)",
+          "oklch(0.216 0.006 56.043)",
+          "oklch(0.268 0.007 34.298)",
+          "oklch(0.4 0.008 50)",
+          "oklch(0.553 0.013 58.071)",
+          "oklch(0.709 0.01 56.259)",
+          "oklch(0.923 0.003 48.717)",
+          "oklch(0.985 0.001 106.423)"
+        ]
+      },
+      "stone-mist": {
+        "role": "muted",
+        "displayName": "Stone Mist",
+        "canonical": "oklch(0.97 0.001 106.424)",
+        "tonalRamp": [
+          "oklch(0.15 0.001 106)",
+          "oklch(0.27 0.001 106)",
+          "oklch(0.39 0.001 106)",
+          "oklch(0.51 0.001 106)",
+          "oklch(0.63 0.001 106)",
+          "oklch(0.76 0.001 106)",
+          "oklch(0.88 0.001 106)",
+          "oklch(0.97 0.001 106.424)"
+        ]
+      },
+      "stone-voice": {
+        "role": "muted-foreground",
+        "displayName": "Stone Voice",
+        "canonical": "oklch(0.553 0.013 58.071)",
+        "tonalRamp": [
+          "oklch(0.15 0.008 58)",
+          "oklch(0.26 0.01 58)",
+          "oklch(0.37 0.012 58)",
+          "oklch(0.46 0.013 58)",
+          "oklch(0.553 0.013 58.071)",
+          "oklch(0.69 0.012 58)",
+          "oklch(0.83 0.008 58)",
+          "oklch(0.95 0.004 58)"
+        ]
+      },
+      "stone-hairline": {
+        "role": "border",
+        "displayName": "Stone Hairline",
+        "canonical": "oklch(0.923 0.003 48.717)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 49)",
+          "oklch(0.27 0.003 49)",
+          "oklch(0.39 0.003 49)",
+          "oklch(0.51 0.003 49)",
+          "oklch(0.63 0.003 49)",
+          "oklch(0.76 0.003 49)",
+          "oklch(0.88 0.003 49)",
+          "oklch(0.95 0.003 49)"
+        ]
+      },
+      "signal-red": {
+        "role": "destructive",
+        "displayName": "Signal Red",
+        "canonical": "oklch(0.577 0.245 27.325)",
+        "tonalRamp": [
+          "oklch(0.25 0.1 27)",
+          "oklch(0.35 0.15 27)",
+          "oklch(0.45 0.2 27)",
+          "oklch(0.577 0.245 27.325)",
+          "oklch(0.65 0.22 25)",
+          "oklch(0.704 0.191 22.216)",
+          "oklch(0.85 0.1 24)",
+          "oklch(0.95 0.04 25)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Merriweather Display", "role": "Docs and long-form headings only (.typeset h1-h4)." },
+      "title": { "displayName": "Serif Title", "role": "Card and section titles via font-heading." },
+      "body": { "displayName": "Geist Body", "role": "Interface default; 1.625 leading in cards and transcripts." },
+      "label": { "displayName": "Geist Label", "role": "Buttons, badges, tabs, sidebar rows." },
+      "mono": {
+        "displayName": "Geist Mono",
+        "fontFamily": "Geist Mono Variable, monospace",
+        "role": "Machine truth: paths, session ids, frames, code. Inline code at 0.85em on Stone Mist wash."
+      }
+    },
+    "shadows": [
+      {
+        "name": "ambient-float",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "Popovers and dropdown menus; always paired with ring-1 ring-foreground/10."
+      },
+      {
+        "name": "deep-float",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Nested submenus and drag layers. Resting surfaces never cast shadows."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control-transition",
+        "value": "transition: all 150ms; active: translateY(1px)",
+        "purpose": "Color-wash hover on controls plus the signature 1px press-nudge."
+      },
+      {
+        "name": "overlay-enter",
+        "value": "100ms fade + zoom-in-95 + 2px slide from trigger side",
+        "purpose": "Popovers, menus, dialogs, tooltips animate in over 100ms and fade/zoom out on close."
+      }
+    ],
+    "breakpoints": [
+      { "name": "typeset-step", "value": "48rem", "purpose": "Long-form text renders 1.125x below, 1x at and above." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one solid-emerald action per view; press nudges 1px.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">New session</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 0; font-family: 'Geist Variable', system-ui, sans-serif; font-size: 12px; font-weight: 500; white-space: nowrap; user-select: none; cursor: default; transition: color 150ms, background-color 150ms, border-color 150ms, box-shadow 150ms, transform 150ms; } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { outline: none; border-color: var(--ring, oklch(0.709 0.01 56.259)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--ring, oklch(0.709 0.01 56.259)) 50%, transparent); } .ds-btn-primary { background: var(--primary, oklch(0.508 0.118 165.612)); color: var(--primary-foreground, oklch(0.979 0.021 166.113)); } .ds-btn-primary:hover { background: color-mix(in oklab, var(--primary, oklch(0.508 0.118 165.612)) 80%, transparent); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Hairline-bordered secondary action.",
+      "html": "<button class=\"ds-btn ds-btn-outline\">Read-only replay</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 0; font-family: 'Geist Variable', system-ui, sans-serif; font-size: 12px; font-weight: 500; white-space: nowrap; user-select: none; cursor: default; transition: color 150ms, background-color 150ms, border-color 150ms, box-shadow 150ms, transform 150ms; } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { outline: none; border-color: var(--ring, oklch(0.709 0.01 56.259)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--ring, oklch(0.709 0.01 56.259)) 50%, transparent); } .ds-btn-outline { border-color: var(--border, oklch(0.923 0.003 48.717)); background: var(--background, oklch(1 0 0)); color: var(--foreground, oklch(0.147 0.004 49.25)); } .ds-btn-outline:hover { background: var(--muted, oklch(0.97 0.001 106.424)); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Chrome-level quiet action; visible only on hover.",
+      "html": "<button class=\"ds-btn ds-btn-ghost\">Close</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 0; font-family: 'Geist Variable', system-ui, sans-serif; font-size: 12px; font-weight: 500; white-space: nowrap; user-select: none; cursor: default; transition: color 150ms, background-color 150ms, border-color 150ms, box-shadow 150ms, transform 150ms; } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { outline: none; border-color: var(--ring, oklch(0.709 0.01 56.259)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--ring, oklch(0.709 0.01 56.259)) 50%, transparent); } .ds-btn-ghost { background: transparent; color: var(--foreground, oklch(0.147 0.004 49.25)); } .ds-btn-ghost:hover { background: var(--muted, oklch(0.97 0.001 106.424)); }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Red text on a red wash, never a solid red block.",
+      "html": "<button class=\"ds-btn ds-btn-destructive\">Kill session</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 0; font-family: 'Geist Variable', system-ui, sans-serif; font-size: 12px; font-weight: 500; white-space: nowrap; user-select: none; cursor: default; transition: color 150ms, background-color 150ms, border-color 150ms, box-shadow 150ms, transform 150ms; } .ds-btn:active { transform: translateY(1px); } .ds-btn-destructive { background: color-mix(in oklab, var(--destructive, oklch(0.577 0.245 27.325)) 10%, transparent); color: var(--destructive, oklch(0.577 0.245 27.325)); } .ds-btn-destructive:hover { background: color-mix(in oklab, var(--destructive, oklch(0.577 0.245 27.325)) 20%, transparent); } .ds-btn-destructive:focus-visible { outline: none; border-color: color-mix(in oklab, var(--destructive, oklch(0.577 0.245 27.325)) 40%, transparent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--destructive, oklch(0.577 0.245 27.325)) 20%, transparent); }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Transparent field with hairline stroke and ring focus.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Steer the agent…\" />",
+      "css": ".ds-input { height: 32px; width: 100%; min-width: 0; padding: 4px 10px; border: 1px solid var(--input, oklch(0.923 0.003 48.717)); border-radius: 0; background: transparent; color: var(--foreground, oklch(0.147 0.004 49.25)); font-family: 'Geist Variable', system-ui, sans-serif; font-size: 12px; outline: none; transition: border-color 150ms, box-shadow 150ms; } .ds-input::placeholder { color: var(--muted-foreground, oklch(0.553 0.013 58.071)); } .ds-input:focus-visible { border-color: var(--ring, oklch(0.709 0.01 56.259)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--ring, oklch(0.709 0.01 56.259)) 50%, transparent); }"
+    },
+    {
+      "name": "Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "20px sharp status chip; solid emerald default.",
+      "html": "<span class=\"ds-badge\">running</span> <span class=\"ds-badge ds-badge-outline\">idle</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 20px; width: fit-content; padding: 2px 8px; border: 1px solid transparent; border-radius: 0; background: var(--primary, oklch(0.508 0.118 165.612)); color: var(--primary-foreground, oklch(0.979 0.021 166.113)); font-family: 'Geist Variable', system-ui, sans-serif; font-size: 12px; font-weight: 500; white-space: nowrap; } .ds-badge-outline { background: transparent; border-color: var(--border, oklch(0.923 0.003 48.717)); color: var(--foreground, oklch(0.147 0.004 49.25)); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat paper surface separated by a 10% hairline ring; serif title.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Session</div><div class=\"ds-card-body\">Transcript with inline diffs, steering composer, and approval inbox.</div></div>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 0; background: var(--card, oklch(1 0 0)); color: var(--card-foreground, oklch(0.147 0.004 49.25)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--foreground, oklch(0.147 0.004 49.25)) 10%, transparent); font-family: 'Geist Variable', system-ui, sans-serif; font-size: 12px; line-height: 1.625; } .ds-card-title { font-family: 'Merriweather Variable', Georgia, serif; font-size: 14px; font-weight: 500; line-height: 1.4; } .ds-card-body { color: var(--muted-foreground, oklch(0.553 0.013 58.071)); }"
+    },
+    {
+      "name": "Tooltip",
+      "kind": "custom",
+      "refersTo": "tooltip",
+      "description": "Inverted Stone Ink surface; sharp corners, no shadow.",
+      "html": "<span class=\"ds-tooltip\">Takeover <kbd class=\"ds-tooltip-kbd\">⌘T</kbd></span>",
+      "css": ".ds-tooltip { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 6px 12px; border-radius: 0; background: var(--foreground, oklch(0.147 0.004 49.25)); color: var(--background, oklch(1 0 0)); font-family: 'Geist Variable', system-ui, sans-serif; font-size: 12px; } .ds-tooltip-kbd { font-family: inherit; font-size: 10px; font-weight: 500; padding: 1px 4px; background: color-mix(in oklab, var(--background, oklch(1 0 0)) 20%, transparent); border-radius: 0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Mission Control, Quiet",
+    "overview": "A flight deck for N concurrent agents where everything is scannable at a glance and nothing performs. The system is warm utilitarian: a strictly functional, terminal-dense core softened by warm stone neutrals and serif headings. Color is state, not decoration — one green means the agent is working or succeeded, one red means something failed or destroys, and everything else stays near-monochrome so a wall of live sessions reads calmly. Alarms only when real, no theatrics.\n\nThe material character is flat and precise: sharp-cornered rectangles separated by hairline rings, compact 32px controls, 12px type. Depth appears only when something genuinely floats. Controls are quiet until pressed — a 1px downward nudge and a focus ring are the only theatrics the system allows.",
+    "keyCharacteristics": [
+      "OKLCH-native palette: muted emerald signal on warm stone neutrals, light and dark",
+      "Sharp rectangles everywhere; the full circle is the only permitted curve",
+      "Flat at rest (hairline rings), shadow only on floating overlays",
+      "Dense, instrument-grade scale: 12px body, 32px controls, 4px spacing unit",
+      "Serif (Merriweather) headings as editorial calm inside a Geist/Geist Mono tool",
+      "Phosphor icons, 16px default, 12–14px in compact controls"
+    ],
+    "rules": [
+      { "name": "The Two-Signals Rule", "body": "Emerald means the agent is working or succeeded; red means it failed or would destroy something. No third accent may be introduced; everything else earns at most a stone-gray wash. On a screen of N live sessions, chroma is the alarm channel — keep it silent by default.", "section": "colors" },
+      { "name": "The Wash-Not-Block Rule", "body": "Destructive affordances are red text on a red-tinted wash (destructive/10, hover /20), never solid red fills. Solid color blocks are reserved for the primary action.", "section": "colors" },
+      { "name": "The Editorial Calm Rule", "body": "Merriweather appears only where a section or document begins (titles, headings); it never labels controls, tabs, or table cells. If text is interactive or tabular, it is Geist; if it is machine output, it is Geist Mono.", "section": "typography" },
+      { "name": "The Density-Is-Kindness Rule", "body": "On a mission-control surface, whitespace inflation hides sessions the operator needs to see. Add air only inside reading surfaces (transcripts, docs), never to chrome, lists, or controls.", "section": "layout" },
+      { "name": "The Flat-at-Rest Rule", "body": "If it doesn't float above the page, it doesn't cast a shadow. Cards, panes, and inputs separate by hairline ring and tonal layering only; a shadow on a resting surface is a defect.", "section": "elevation" },
+      { "name": "The Sharp Rectangle Rule", "body": "Rectangles are square-cornered, period — no rounded-sm creep on new components, including overlays. If a shape is round, it is a perfect circle with a distinct job (identity, toggle state); there is nothing in between.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do use @omp-gui/ui primitives for every surface; compose app-specific pieces from them (mandated by docs/agents/ui.md).",
+      "Do keep emerald exclusively for agent-working/success/primary-action meaning, exactly as --primary/--success share one value.",
+      "Do separate resting surfaces with ring-1 ring-foreground/10 or border-border hairlines; reserve shadow-md/shadow-lg for floating overlays.",
+      "Do hold the density floor: 12px control type, 32px control height, 4px spacing unit.",
+      "Do use Phosphor icons only, 16px default (size-4), stepping to size-3/size-3.5 in compact controls.",
+      "Do write machine truth — paths, ids, frames — in Geist Mono.",
+      "Do ship both themes: every new color must be defined in :root and .dark in OKLCH."
+    ],
+    "donts": [
+      "Don't round a rectangle. rounded-none is the law for buttons, inputs, badges, cards, tabs, and overlays; only true circles use rounded-full.",
+      "Don't introduce a third accent hue or use emerald decoratively; chroma is the alarm channel.",
+      "Don't paint solid red surfaces; destructive is red text on a 10–20% wash.",
+      "Don't put Merriweather on controls, tabs, or table cells; the serif marks beginnings only.",
+      "Don't add shadows to cards, panels, or inputs at rest.",
+      "Don't hand-roll primitives or import icon sets other than Phosphor.",
+      "Don't bake the working name \"omp-gui\" into user-facing chrome as if final; the shipping name is undecided (PRODUCT.md)."
+    ]
+  }
+}
