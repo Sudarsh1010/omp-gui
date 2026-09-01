@@ -35,6 +35,7 @@
  */
 import type { IpcClient, IpcSessionHandle } from "../client";
 import { Transcript } from "./transcript";
+import type { RpcSession } from "./session";
 
 export type SessionStatus = "idle" | "running" | "error" | "exited";
 
@@ -89,6 +90,13 @@ export interface SessionsStore {
   /** The `Transcript` for a session, or `undefined` before its subprocess
    * is ready, after it fails to start, or once it's been closed. */
   getTranscript(id: string): Transcript | undefined;
+  /**
+   * The live `RpcSession` for a session — direct `command`/`onEvent` access
+   * for session-scoped features (approval inbox T4, subagent panel T12,
+   * model/thinking pickers T13, steering T5). `undefined` before the
+   * subprocess is ready, after a start failure, or once closed.
+   */
+  getSession(id: string): RpcSession | undefined;
   /** The currently active session id, or `null` when none exist. */
   readonly activeId: string | null;
   /** Set a session's `pendingApprovals` count (extension seam for T4's
@@ -214,6 +222,10 @@ export function createSessionsStore(client: IpcClient): SessionsStore {
 
     getTranscript(id: string): Transcript | undefined {
       return sessions.get(id)?.transcript ?? undefined;
+    },
+
+    getSession(id: string): RpcSession | undefined {
+      return sessions.get(id)?.handle?.session ?? undefined;
     },
 
     get activeId(): string | null {
