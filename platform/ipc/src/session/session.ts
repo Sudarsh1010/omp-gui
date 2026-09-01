@@ -140,6 +140,8 @@ export class RpcSession {
     string,
     { resolve: (response: RpcResponse) => void; reject: (error: Error) => void }
   >();
+  private readonly eventListeners = new Set<(frame: RpcEventFrame) => void>();
+  private readonly exitListeners = new Set<() => void>();
   private readonly unsubscribe: () => void;
 
   private constructor(
@@ -147,6 +149,8 @@ export class RpcSession {
     readonly ready: RpcReadyFrame,
     private readonly options: RpcSessionOptions,
   ) {
+    if (options.onEvent) this.eventListeners.add(options.onEvent);
+    if (options.onExit) this.exitListeners.add(options.onExit);
     const offLine = transport.onLine((line) => this.handleLine(line));
     const offExit = transport.onExit(() => this.handleExit());
     this.unsubscribe = () => {
@@ -158,6 +162,26 @@ export class RpcSession {
   /** The negotiated protocol version (1, or 2 after a successful negotiation). */
   get protocolVersion(): number {
     return this.protocol;
+  }
+
+  /**
+   * Subscribe to every non-response frame (session events, side channels).
+   * Multiple listeners may be registered; the constructor's `options.onEvent`
+   * (if provided) is registered as one of them. Returns an unsubscribe function.
+   */
+  onEvent(handler: (frame: RpcEventFrame) => void): () => void {
+    this.eventListeners.add(handler);
+    return () => {
+      this.eventListeners.delete(handler);
+    };
+  }
+
+  /** Subscribe to subprocess exit. Returns an unsubscribe function. */
+  onExit(handler: () => void): () => void {
+    this.exitListeners.add(handler);
+    return () => {
+      this.exitListeners.delete(handler);
+    };
   }
 
   /**
@@ -178,9 +202,11 @@ export class RpcSession {
     let offLine = () => {};
     let offExit = () => {};
     offLine = transport.onLine((line) => {
-      const frame = parseFrame(line, options);
+      const frame = parseFrame(line);
       if (frame?.type === "ready") {
         resolveReady(frame as unknown as RpcReadyFrame);
+      } else if (!frame) {
+        options.onEvent?.({ type: "malformed_frame", line });
       }
     });
     offExit = transport.onExit(() => {
@@ -247,14 +273,17 @@ export class RpcSession {
   }
 
   private handleLine(line: string): void {
-    const frame = parseFrame(line, this.options);
-    if (!frame) return;
+    const frame = parseFrame(line);
+    if (!frame) {
+      this.emitEvent({ type: "malformed_frame", line });
+      return;
+    }
     if (frame.type === "rpc_chunk" && this.reassembler) {
       try {
         const assembled = this.reassembler.push(frame as unknown as RpcChunkFrame);
         if (assembled) this.handleLine(assembled);
       } catch (error) {
-        this.options.onEvent?.({
+        this.emitEvent({
           type: "protocol_error",
           error: error instanceof Error ? error.message : String(error),
         });
@@ -269,7 +298,7 @@ export class RpcSession {
         return;
       }
     }
-    this.options.onEvent?.(frame as RpcEventFrame);
+    this.emitEvent(frame as RpcEventFrame);
   }
 
   private handleExit(): void {
@@ -277,11 +306,15 @@ export class RpcSession {
       pending.reject(new RpcProtocolError("omp process exited"));
     }
     this.pending.clear();
-    this.options.onExit?.();
+    for (const listener of this.exitListeners) listener();
+  }
+
+  private emitEvent(frame: RpcEventFrame): void {
+    for (const listener of this.eventListeners) listener(frame);
   }
 }
 
-function parseFrame(line: string, options: RpcSessionOptions): Record<string, unknown> | null {
+function parseFrame(line: string): Record<string, unknown> | null {
   try {
     const frame: unknown = JSON.parse(line);
     if (typeof frame === "object" && frame !== null && "type" in frame) {
@@ -290,6 +323,5 @@ function parseFrame(line: string, options: RpcSessionOptions): Record<string, un
   } catch {
     // fall through
   }
-  options.onEvent?.({ type: "malformed_frame", line });
   return null;
 }

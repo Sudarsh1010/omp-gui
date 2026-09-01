@@ -1,25 +1,13 @@
 import { createFileRoute, useRouteContext } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
-import type { OmpStartInfo } from "@omp-gui/ipc";
-import { Button } from "@omp-gui/ui/components/button";
+import { useEffect, useState } from "react";
+import type { IpcSessionHandle } from "@omp-gui/ipc";
+import { Alert, AlertDescription, AlertTitle } from "@omp-gui/ui/components/alert";
 import { Spinner } from "@omp-gui/ui/components/spinner";
-import { Alert, AlertTitle, AlertDescription } from "@omp-gui/ui/components/alert";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@omp-gui/ui/components/card";
+import { Composer } from "@gui/components/session/composer";
+import { TranscriptView } from "@gui/components/session/transcript-view";
+import { useTranscript } from "@gui/components/session/use-transcript";
 
-type Phase = "idle" | "starting" | "running" | "error";
-
-interface RoundTrip {
-  info: OmpStartInfo;
-  ready: unknown;
-  negotiated: number;
-  canned: unknown;
-}
+type Status = "starting" | "ready" | "error";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -27,79 +15,71 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const { ipc } = useRouteContext({ from: "__root__" });
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [result, setResult] = useState<RoundTrip | null>(null);
+  const [handle, setHandle] = useState<IpcSessionHandle | null>(null);
+  const [status, setStatus] = useState<Status>("starting");
   const [error, setError] = useState<string | null>(null);
 
-  const run = useCallback(async () => {
-    setPhase("starting");
-    setResult(null);
+  useEffect(() => {
+    let cancelled = false;
+    let activeHandle: IpcSessionHandle | null = null;
+    setStatus("starting");
     setError(null);
-    try {
-      const handle = await ipc.startSession();
-      // Canned command: proves the full byte path spawn → pipe → parse → render.
-      const canned = await handle.session.command({ type: "get_state" });
-      setResult({
-        info: handle.info,
-        ready: handle.session.ready,
-        negotiated: handle.session.protocolVersion,
-        canned,
-      });
-      setPhase("running");
-      await handle.close();
-      setPhase("idle");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setPhase("error");
-    }
+    void (async () => {
+      try {
+        const started = await ipc.startSession();
+        if (cancelled) {
+          await started.close();
+          return;
+        }
+        activeHandle = started;
+        setHandle(started);
+        setStatus("ready");
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+          setStatus("error");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      setHandle(null);
+      void activeHandle?.close();
+    };
   }, [ipc]);
 
-  useEffect(() => {
-    void run();
-  }, [run]);
-
-  const starting = phase === "starting";
+  const { snapshot, sendPrompt, abort } = useTranscript(handle?.session);
 
   return (
-    <main className="mx-auto flex max-w-[48em] flex-col gap-4 py-8">
-      <div className="typeset typeset-docs">
-        <h1>omp-gui · T1 wire round-trip</h1>
-        <p>
-          Spawns the pinned <code>omp --mode rpc-ui</code> subprocess, parses the <code>ready</code>{" "}
-          frame, negotiates the protocol version, and round-trips a canned <code>get_state</code>{" "}
-          command.
-        </p>
-      </div>
+    <main className="mx-auto flex h-dvh max-w-[64em] flex-col gap-3 px-4 py-4">
+      <header className="flex shrink-0 items-center justify-between">
+        <h1 className="text-sm font-medium">omp-gui session</h1>
+        {handle && (
+          <span className="text-xs text-muted-foreground">
+            omp {handle.info.version} ({handle.info.source}) · protocol v{handle.session.protocolVersion}
+          </span>
+        )}
+      </header>
 
-      <Button type="button" onClick={() => void run()} disabled={starting} className="self-start">
-        {starting && <Spinner />}
-        {starting ? "Running…" : "Run round-trip"}
-      </Button>
+      {status === "starting" && (
+        <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Spinner />
+          Starting omp…
+        </div>
+      )}
 
-      {error && (
+      {status === "error" && (
         <Alert variant="destructive">
-          <AlertTitle>Round-trip failed</AlertTitle>
+          <AlertTitle>Failed to start session</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      {result && (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              omp {result.info.version} <small>({result.info.source})</small>
-            </CardTitle>
-            <CardDescription>{result.info.path}</CardDescription>
-          </CardHeader>
-          <CardContent className="typeset typeset-docs">
-            <h3>ready frame</h3>
-            <pre>{JSON.stringify(result.ready, null, 2)}</pre>
-            <h3>negotiated protocol version</h3>
-            <pre>{result.negotiated}</pre>
-            <h3>get_state response (raw)</h3>
-            <pre>{JSON.stringify(result.canned, null, 2)}</pre>
-          </CardContent>
-        </Card>
+      {status === "ready" && (
+        <>
+          <TranscriptView entries={snapshot.entries} className="flex-1" />
+          <Composer running={snapshot.running} aborting={snapshot.aborting} onSubmit={sendPrompt} onAbort={abort} />
+        </>
       )}
     </main>
   );
