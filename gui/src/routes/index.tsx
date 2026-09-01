@@ -56,7 +56,8 @@ function Index() {
         <h1 className="text-sm font-medium">omp-gui session</h1>
         {handle && (
           <span className="text-xs text-muted-foreground">
-            omp {handle.info.version} ({handle.info.source}) · protocol v{handle.session.protocolVersion}
+            omp {handle.info.version} ({handle.info.source}) · protocol v
+            {handle.session.protocolVersion}
           </span>
         )}
       </header>
@@ -78,7 +79,12 @@ function Index() {
       {status === "ready" && (
         <>
           <TranscriptView entries={snapshot.entries} className="flex-1" />
-          <Composer running={snapshot.running} aborting={snapshot.aborting} onSubmit={sendPrompt} onAbort={abort} />
+          <Composer
+            running={snapshot.running}
+            aborting={snapshot.aborting}
+            onSubmit={sendPrompt}
+            onAbort={abort}
+          />
         </>
       )}
     </main>

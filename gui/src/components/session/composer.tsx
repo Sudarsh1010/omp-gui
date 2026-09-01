@@ -66,7 +66,13 @@ export function Composer({ running, aborting, onSubmit, onAbort }: ComposerProps
               {aborting ? "Aborting…" : "Abort"}
             </Button>
           ) : (
-            <InputGroupButton type="submit" variant="default" size="sm" disabled={!trimmed} className="ml-auto">
+            <InputGroupButton
+              type="submit"
+              variant="default"
+              size="sm"
+              disabled={!trimmed}
+              className="ml-auto"
+            >
               <PaperPlaneRightIcon />
               Send
             </InputGroupButton>

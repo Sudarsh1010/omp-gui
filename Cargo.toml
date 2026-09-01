@@ -19,7 +19,7 @@ specta-typescript = "0.0.12"
 uuid = { version = "1", features = ["v4"] }
 # Browser Pane (ADR-0006, ADR-0007): a dedicated tokio runtime drives the
 # app's second CDP client (screencast attach) and the localhost frame server.
-tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
 tokio-tungstenite = "0.30"
 futures-util = "0.3"
 # Decodes `Page.screencastFrame`'s base64 JPEG payload.

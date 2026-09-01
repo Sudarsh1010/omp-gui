@@ -11,7 +11,15 @@ import { Message, MessageContent, MessageHeader } from "@omp-gui/ui/components/m
 import { Bubble, BubbleContent } from "@omp-gui/ui/components/bubble";
 import { Alert, AlertDescription, AlertTitle } from "@omp-gui/ui/components/alert";
 import { Badge } from "@omp-gui/ui/components/badge";
-import { Item, ItemActions, ItemContent, ItemDescription, ItemHeader, ItemMedia, ItemTitle } from "@omp-gui/ui/components/item";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemHeader,
+  ItemMedia,
+  ItemTitle,
+} from "@omp-gui/ui/components/item";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import { BrainIcon, InfoIcon, WarningIcon, WrenchIcon } from "@phosphor-icons/react";
 
@@ -99,7 +107,10 @@ const TOOL_STATUS_LABEL: Record<ToolExecutionStatus, string> = {
   aborted: "Aborted",
 };
 
-const TOOL_STATUS_BADGE_VARIANT: Record<ToolExecutionStatus, "secondary" | "outline" | "destructive"> = {
+const TOOL_STATUS_BADGE_VARIANT: Record<
+  ToolExecutionStatus,
+  "secondary" | "outline" | "destructive"
+> = {
   running: "secondary",
   done: "outline",
   error: "destructive",
@@ -150,7 +161,9 @@ function ToolExecutionView({ entry }: { entry: ToolExecutionEntry }) {
         </pre>
       ) : (
         payloadText && (
-          <pre className="max-h-40 overflow-auto border border-border bg-muted p-2 text-[11px]">{payloadText}</pre>
+          <pre className="max-h-40 overflow-auto border border-border bg-muted p-2 text-[11px]">
+            {payloadText}
+          </pre>
         )
       )}
     </Item>

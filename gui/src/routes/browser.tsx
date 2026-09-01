@@ -18,9 +18,9 @@ function BrowserRoute() {
         <h1>omp-gui · Browser Pane</h1>
         <p>
           Launches an app-owned, per-project Chrome for Testing instance (ADR-0006) with a
-          persistent profile and streams its live screencast here over a localhost endpoint —
-          never through Tauri events (ADR-0007). omp's builtin browser tool attaches to the same
-          Chromium via its <code>connected</code>-CDP path.
+          persistent profile and streams its live screencast here over a localhost endpoint — never
+          through Tauri events (ADR-0007). omp's builtin browser tool attaches to the same Chromium
+          via its <code>connected</code>-CDP path.
         </p>
       </div>
 

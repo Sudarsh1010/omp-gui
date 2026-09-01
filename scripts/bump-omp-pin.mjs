@@ -35,7 +35,9 @@ const releaseResponse = await fetch(`https://api.github.com/repos/${REPO}/releas
   headers: releaseHeaders,
 });
 if (!releaseResponse.ok) {
-  console.error(`failed to resolve latest ${REPO} release: ${releaseResponse.status} ${releaseResponse.statusText}`);
+  console.error(
+    `failed to resolve latest ${REPO} release: ${releaseResponse.status} ${releaseResponse.statusText}`,
+  );
   process.exit(1);
 }
 const release = await releaseResponse.json();
@@ -60,7 +62,9 @@ for (const platformKey of PLATFORMS) {
   console.log(`hashing ${url}`);
   const assetResponse = await fetch(url);
   if (!assetResponse.ok) {
-    console.error(`download failed for ${url}: ${assetResponse.status} ${assetResponse.statusText}`);
+    console.error(
+      `download failed for ${url}: ${assetResponse.status} ${assetResponse.statusText}`,
+    );
     process.exit(1);
   }
   const bytes = new Uint8Array(await assetResponse.arrayBuffer());

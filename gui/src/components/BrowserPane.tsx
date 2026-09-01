@@ -159,7 +159,11 @@ export function BrowserPane({ projectPath }: BrowserPaneProps) {
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  {status === "launching" ? <Spinner className="size-6" /> : <GlobeIcon className="size-6" />}
+                  {status === "launching" ? (
+                    <Spinner className="size-6" />
+                  ) : (
+                    <GlobeIcon className="size-6" />
+                  )}
                 </EmptyMedia>
                 <EmptyTitle>
                   {status === "launching" ? "Launching Chrome for Testing…" : "No live view yet"}

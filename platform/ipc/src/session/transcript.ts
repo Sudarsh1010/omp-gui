@@ -21,7 +21,10 @@ import type {
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
 import type { RpcEventFrame, RpcSession } from "./session";
 
-type SessionEvent<T extends RpcSessionEventFrame["type"]> = Extract<RpcSessionEventFrame, { type: T }>;
+type SessionEvent<T extends RpcSessionEventFrame["type"]> = Extract<
+  RpcSessionEventFrame,
+  { type: T }
+>;
 type AgentMessageT = SessionEvent<"message_start">["message"];
 type AssistantMessageEventT = SessionEvent<"message_update">["assistantMessageEvent"];
 type UserLikeMessage = Extract<AgentMessageT, { role: "user" | "developer" }>;
@@ -207,7 +210,11 @@ export class Transcript {
     // transport-level frames (not part of the rpc-ui wire protocol), so they
     // are handled here rather than in `handleEvent`'s protocol-shaped switch.
     if (frame.type === "malformed_frame") {
-      this.appendNotice("error", `malformed frame from omp: ${String(frame.line ?? "")}`, "transport");
+      this.appendNotice(
+        "error",
+        `malformed frame from omp: ${String(frame.line ?? "")}`,
+        "transport",
+      );
       this.publish();
       return;
     }
@@ -506,7 +513,11 @@ export class Transcript {
   }
 
   private publish(): void {
-    this.currentSnapshot = { entries: this.entries, running: this.running, aborting: this.aborting };
+    this.currentSnapshot = {
+      entries: this.entries,
+      running: this.running,
+      aborting: this.aborting,
+    };
     for (const listener of this.listeners) listener(this.currentSnapshot);
   }
 }

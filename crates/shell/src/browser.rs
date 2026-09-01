@@ -16,12 +16,12 @@
 //! tiny surface" (ADR-0007): a handful of stable CDP methods, hand-rolled
 //! over `tokio-tungstenite` rather than a full CDP binding crate.
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use specta::Type;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -167,9 +167,10 @@ pub fn browser_launch(
     state: State<'_, BrowserState>,
     project_path: String,
 ) -> Result<BrowserInfo, BrowserError> {
-    let canonical = std::fs::canonicalize(&project_path).map_err(|e| BrowserError::ProfileDirFailed {
-        message: format!("project path {project_path} is not accessible: {e}"),
-    })?;
+    let canonical =
+        std::fs::canonicalize(&project_path).map_err(|e| BrowserError::ProfileDirFailed {
+            message: format!("project path {project_path} is not accessible: {e}"),
+        })?;
     let key = canonical.to_string_lossy().into_owned();
 
     {
@@ -292,7 +293,10 @@ pub fn browser_launch(
 /// (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_stop(state: State<'_, BrowserState>, project_path: String) -> Result<(), BrowserError> {
+pub fn browser_stop(
+    state: State<'_, BrowserState>,
+    project_path: String,
+) -> Result<(), BrowserError> {
     let key = std::fs::canonicalize(&project_path)
         .map(|p| p.to_string_lossy().into_owned())
         .map_err(|_| BrowserError::UnknownProject)?;
@@ -407,7 +411,10 @@ fn http_origin_of(cdp_ws_url: &str) -> Result<String, BrowserError> {
 /// relocate — and thus appear to wipe — every project's logins the next time
 /// the app happens to rebuild with a different toolchain. FNV-1a is a fixed,
 /// public algorithm this crate owns forever instead.
-fn profile_dir_for_project(app: &AppHandle, canonical_project_path: &Path) -> Result<PathBuf, BrowserError> {
+fn profile_dir_for_project(
+    app: &AppHandle,
+    canonical_project_path: &Path,
+) -> Result<PathBuf, BrowserError> {
     let base = app
         .path()
         .app_data_dir()
@@ -420,7 +427,13 @@ fn profile_dir_for_project(app: &AppHandle, canonical_project_path: &Path) -> Re
         .and_then(|n| n.to_str())
         .unwrap_or("project")
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     Ok(base
         .join("browser-profiles")
@@ -456,9 +469,15 @@ async fn run_cdp_pump(cdp_ws_url: String, frames: broadcast::Sender<Bytes>) {
     };
 
     let mut next_id: u64 = 1;
-    if send_cdp(&mut ws, next_id, "Target.setDiscoverTargets", json!({ "discover": true }), None)
-        .await
-        .is_err()
+    if send_cdp(
+        &mut ws,
+        next_id,
+        "Target.setDiscoverTargets",
+        json!({ "discover": true }),
+        None,
+    )
+    .await
+    .is_err()
     {
         return;
     }
@@ -481,7 +500,8 @@ async fn run_cdp_pump(cdp_ws_url: String, frames: broadcast::Sender<Bytes>) {
                 continue;
             }
             if pending_attach.remove(&id) {
-                let Some(session_id) = value.pointer("/result/sessionId").and_then(Value::as_str) else {
+                let Some(session_id) = value.pointer("/result/sessionId").and_then(Value::as_str)
+                else {
                     continue;
                 };
                 next_id += 1;
@@ -516,9 +536,13 @@ async fn run_cdp_pump(cdp_ws_url: String, frames: broadcast::Sender<Bytes>) {
 
         match value.get("method").and_then(Value::as_str) {
             Some("Target.targetCreated" | "Target.targetInfoChanged") => {
-                let is_page =
-                    value.pointer("/params/targetInfo/type").and_then(Value::as_str) == Some("page");
-                let Some(target_id) = value.pointer("/params/targetInfo/targetId").and_then(Value::as_str)
+                let is_page = value
+                    .pointer("/params/targetInfo/type")
+                    .and_then(Value::as_str)
+                    == Some("page");
+                let Some(target_id) = value
+                    .pointer("/params/targetInfo/targetId")
+                    .and_then(Value::as_str)
                 else {
                     continue;
                 };

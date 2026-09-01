@@ -29,14 +29,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
-import type { RpcExtensionUIResponse, RpcHostToolResult } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
+import type {
+  RpcExtensionUIResponse,
+  RpcHostToolResult,
+} from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
 import { nodeBridge } from "../bridge/node";
 import type { ShellBridge } from "../bridge/shell-bridge";
 import { createIpcClient, type IpcSessionHandle } from "../client";
 import type { RpcEventFrame } from "./session";
 
 const binary =
-  process.env.OMP_GUI_OMP_PATH ?? join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
+  process.env.OMP_GUI_OMP_PATH ??
+  join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
 
 /** Env vars omp's own auth layer resolves a provider from with zero config. */
 const LIVE_MODEL_CREDENTIAL_ENV_VARS = [
@@ -183,7 +187,9 @@ function asSubagentLifecycle(frame: RpcEventFrame): SubagentLifecycle | undefine
 function isSubagentEventFor(frame: RpcEventFrame, subagentId: string): boolean {
   if (frame.type !== "subagent_event") return false;
   const payload = frame.payload;
-  return Boolean(payload && typeof payload === "object" && "id" in payload && payload.id === subagentId);
+  return Boolean(
+    payload && typeof payload === "object" && "id" in payload && payload.id === subagentId,
+  );
 }
 
 interface SmokeSession {
@@ -236,10 +242,14 @@ describe("protocol smoke suite (ADR-0008)", () => {
       // Checklist item 2.
       it("completes a prompt round trip from agent_start to agent_end", async () => {
         await withSession(async ({ handle, events }) => {
-          const agentEnded = events.waitFor((frame) => frame.type === "agent_end", "agent_end after prompt");
+          const agentEnded = events.waitFor(
+            (frame) => frame.type === "agent_end",
+            "agent_end after prompt",
+          );
           await handle.session.command({
             type: "prompt",
-            message: "Do not call any tools. Reply with exactly the single word PONG and nothing else.",
+            message:
+              "Do not call any tools. Reply with exactly the single word PONG and nothing else.",
           });
 
           expect(extractAssistantText((await agentEnded).messages)).toContain("PONG");
@@ -249,7 +259,10 @@ describe("protocol smoke suite (ADR-0008)", () => {
       // Checklist item 3.
       it("delivers a mid-turn steer message into the running turn", async () => {
         await withSession(async ({ handle, events }) => {
-          const turnStarted = events.waitFor((frame) => frame.type === "turn_start", "turn_start for the long count");
+          const turnStarted = events.waitFor(
+            (frame) => frame.type === "turn_start",
+            "turn_start for the long count",
+          );
           await handle.session.command({
             type: "prompt",
             message:
@@ -257,10 +270,14 @@ describe("protocol smoke suite (ADR-0008)", () => {
           });
           await turnStarted;
 
-          const agentEnded = events.waitFor((frame) => frame.type === "agent_end", "agent_end after steer");
+          const agentEnded = events.waitFor(
+            (frame) => frame.type === "agent_end",
+            "agent_end after steer",
+          );
           await handle.session.command({
             type: "steer",
-            message: "Stop counting immediately. Your entire next reply must be exactly the single word STEERED.",
+            message:
+              "Stop counting immediately. Your entire next reply must be exactly the single word STEERED.",
           });
 
           expect(extractAssistantText((await agentEnded).messages)).toContain("STEERED");
@@ -270,7 +287,10 @@ describe("protocol smoke suite (ADR-0008)", () => {
       // Checklist item 4.
       it("aborts an in-flight turn before it runs to completion", async () => {
         await withSession(async ({ handle, events }) => {
-          const turnStarted = events.waitFor((frame) => frame.type === "turn_start", "turn_start for the long count");
+          const turnStarted = events.waitFor(
+            (frame) => frame.type === "turn_start",
+            "turn_start for the long count",
+          );
           await handle.session.command({
             type: "prompt",
             message:
@@ -278,7 +298,10 @@ describe("protocol smoke suite (ADR-0008)", () => {
           });
           await turnStarted;
 
-          const agentEnded = events.waitFor((frame) => frame.type === "agent_end", "agent_end after abort");
+          const agentEnded = events.waitFor(
+            (frame) => frame.type === "agent_end",
+            "agent_end after abort",
+          );
           await handle.session.command({ type: "abort" });
 
           expect(extractAssistantText((await agentEnded).messages)).not.toContain("60");
@@ -288,7 +311,10 @@ describe("protocol smoke suite (ADR-0008)", () => {
       // Checklist item 5.
       it("aborts an in-flight turn and immediately starts a fresh prompt", async () => {
         await withSession(async ({ handle, events }) => {
-          const turnStarted = events.waitFor((frame) => frame.type === "turn_start", "turn_start for the long count");
+          const turnStarted = events.waitFor(
+            (frame) => frame.type === "turn_start",
+            "turn_start for the long count",
+          );
           await handle.session.command({
             type: "prompt",
             message:
@@ -302,7 +328,8 @@ describe("protocol smoke suite (ADR-0008)", () => {
           );
           await handle.session.command({
             type: "abort_and_prompt",
-            message: "Ignore everything above. Reply with exactly the single word RESTARTED and nothing else.",
+            message:
+              "Ignore everything above. Reply with exactly the single word RESTARTED and nothing else.",
           });
           await newRunStarted;
 
@@ -329,7 +356,9 @@ describe("protocol smoke suite (ADR-0008)", () => {
                   "prefixed with 'ack:'.",
                 parameters: {
                   type: "object",
-                  properties: { echo: { type: "string", description: "Text for the host to echo back." } },
+                  properties: {
+                    echo: { type: "string", description: "Text for the host to echo back." },
+                  },
                   required: ["echo"],
                   additionalProperties: false,
                 },
@@ -355,7 +384,10 @@ describe("protocol smoke suite (ADR-0008)", () => {
           expect(call.toolName).toBe("omp_gui_smoke_probe");
           expect(call.echo).toBe("ping");
 
-          const agentEnded = events.waitFor((frame) => frame.type === "agent_end", "agent_end after host tool cycle");
+          const agentEnded = events.waitFor(
+            (frame) => frame.type === "agent_end",
+            "agent_end after host tool cycle",
+          );
           const result: RpcHostToolResult = {
             type: "host_tool_result",
             id: call.id,
@@ -394,7 +426,11 @@ describe("protocol smoke suite (ADR-0008)", () => {
             (frame) => frame.type === "agent_end",
             "agent_end after extension-ui cycle",
           );
-          const response: RpcExtensionUIResponse = { type: "extension_ui_response", id: request.id, value: "Yes" };
+          const response: RpcExtensionUIResponse = {
+            type: "extension_ui_response",
+            id: request.id,
+            value: "Yes",
+          };
           await bridge.send(handle.info.sessionId, JSON.stringify(response));
 
           expect(extractAssistantText((await agentEnded).messages)).toContain("CONTINUED");
@@ -426,7 +462,9 @@ describe("protocol smoke suite (ADR-0008)", () => {
           const finished = await events.waitFor(
             (frame) => {
               const payload = asSubagentLifecycle(frame);
-              return payload !== undefined && payload.id === subagentId && payload.status !== "started";
+              return (
+                payload !== undefined && payload.id === subagentId && payload.status !== "started"
+              );
             },
             "terminal subagent_lifecycle",
             90_000,
@@ -435,7 +473,8 @@ describe("protocol smoke suite (ADR-0008)", () => {
           if (!finishedPayload) throw new Error("expected a subagent_lifecycle frame");
           expect(finishedPayload.status).not.toBe("started");
 
-          const sawChildEvent = events.all((frame) => isSubagentEventFor(frame, subagentId)).length > 0;
+          const sawChildEvent =
+            events.all((frame) => isSubagentEventFor(frame, subagentId)).length > 0;
           expect(sawChildEvent).toBe(true);
         });
       }, 150_000);

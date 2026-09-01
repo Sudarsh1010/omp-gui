@@ -7,7 +7,13 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@omp-gui/ui/components/message-scroller";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@omp-gui/ui/components/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@omp-gui/ui/components/empty";
 import { cn } from "@omp-gui/ui/lib/utils";
 import { ChatCircleDotsIcon } from "@phosphor-icons/react";
 import { TranscriptEntryView } from "@gui/components/session/transcript-entry";

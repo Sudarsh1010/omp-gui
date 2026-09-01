@@ -57,7 +57,7 @@ function asObject(value: unknown, context: string): Record<string, unknown> {
   if (!value || typeof value !== "object") {
     throw new Error(`expected ${context} to be an object, got ${typeof value}`);
   }
-  return value;
+  return value as Record<string, unknown>;
 }
 
 function asArray(value: unknown, context: string): unknown[] {
@@ -73,7 +73,10 @@ function asArray(value: unknown, context: string): unknown[] {
 class CdpClient {
   #ws: WebSocket;
   #nextId = 1;
-  #pending = new Map<number, { resolve: (v: Record<string, unknown>) => void; reject: (e: Error) => void }>();
+  #pending = new Map<
+    number,
+    { resolve: (v: Record<string, unknown>) => void; reject: (e: Error) => void }
+  >();
   #listeners = new Set<(msg: CdpMessage) => void>();
 
   private constructor(ws: WebSocket) {
@@ -94,12 +97,18 @@ class CdpClient {
     const ws = new WebSocket(url);
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     ws.addEventListener("open", () => resolve(), { once: true });
-    ws.addEventListener("error", () => reject(new Error(`failed to connect to ${url}`)), { once: true });
+    ws.addEventListener("error", () => reject(new Error(`failed to connect to ${url}`)), {
+      once: true,
+    });
     await promise;
     return new CdpClient(ws);
   }
 
-  send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<Record<string, unknown>> {
+  send(
+    method: string,
+    params: Record<string, unknown> = {},
+    sessionId?: string,
+  ): Promise<Record<string, unknown>> {
     const id = this.#nextId++;
     const envelope: Record<string, unknown> = { id, method, params };
     if (sessionId) envelope.sessionId = sessionId;
@@ -143,7 +152,12 @@ class CdpClient {
 
 function isPageTarget(params: Record<string, unknown>): boolean {
   const targetInfo = params.targetInfo;
-  return !!targetInfo && typeof targetInfo === "object" && "type" in targetInfo && targetInfo.type === "page";
+  return (
+    !!targetInfo &&
+    typeof targetInfo === "object" &&
+    "type" in targetInfo &&
+    targetInfo.type === "page"
+  );
 }
 
 function targetIdOf(params: Record<string, unknown>): string {
@@ -166,7 +180,10 @@ function findCookieValue(cookies: unknown[], name: string): string | undefined {
 async function attachToFirstPage(cdp: CdpClient): Promise<string> {
   await cdp.send("Target.setDiscoverTargets", { discover: true });
   const params = await cdp.waitForEvent("Target.targetCreated", isPageTarget);
-  const result = await cdp.send("Target.attachToTarget", { targetId: targetIdOf(params), flatten: true });
+  const result = await cdp.send("Target.attachToTarget", {
+    targetId: targetIdOf(params),
+    flatten: true,
+  });
   return asString(result.sessionId, "Target.attachToTarget sessionId");
 }
 
@@ -174,7 +191,13 @@ async function attachToFirstPage(cdp: CdpClient): Promise<string> {
 function chromeForTestingRelativePath(): string {
   if (process.platform === "darwin") {
     const archFolder = process.arch === "arm64" ? "mac-arm64" : "mac-x64";
-    return join(`chrome-${archFolder}`, "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing");
+    return join(
+      `chrome-${archFolder}`,
+      "Google Chrome for Testing.app",
+      "Contents",
+      "MacOS",
+      "Google Chrome for Testing",
+    );
   }
   if (process.platform === "win32") {
     return join("chrome-win64", "chrome.exe");
@@ -208,7 +231,10 @@ function resolveChromeExecutable(): string | null {
 /** Mirrors `browser_launch`'s stderr-banner scrape: the exact signal
  * `@puppeteer/browsers`' own launcher waits on (`CDP_WEBSOCKET_ENDPOINT_REGEX`).
  * `timeoutMs` bounds a real Chrome cold start — see the file-level note. */
-function waitForDevToolsUrl(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<string> {
+function waitForDevToolsUrl(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMs: number,
+): Promise<string> {
   const { promise, resolve, reject } = Promise.withResolvers<string>();
   const rl = createInterface({ input: child.stderr });
   const timer = setTimeout(() => {
@@ -246,7 +272,9 @@ function launchChrome(userDataDir: string): ChildProcessWithoutNullStreams {
   return child;
 }
 
-async function launchAndWait(userDataDir: string): Promise<{ child: ChildProcessWithoutNullStreams; wsUrl: string }> {
+async function launchAndWait(
+  userDataDir: string,
+): Promise<{ child: ChildProcessWithoutNullStreams; wsUrl: string }> {
   const child = launchChrome(userDataDir);
   const wsUrl = await waitForDevToolsUrl(child, 20_000);
   return { child, wsUrl };
@@ -260,94 +288,97 @@ async function stopChrome(child: ChildProcessWithoutNullStreams): Promise<void> 
 (chromePath ? describe : describe.skip)(
   "browser CDP seam (dual attach, screencast, profile persistence)",
   () => {
-    it(
-      "attaches as a second CDP client and receives screencast frames",
-      async () => {
-        const userDataDir = mkdtempSync(join(tmpdir(), "omp-gui-browser-test-"));
-        const { child, wsUrl } = await launchAndWait(userDataDir);
+    it("attaches as a second CDP client and receives screencast frames", async () => {
+      const userDataDir = mkdtempSync(join(tmpdir(), "omp-gui-browser-test-"));
+      const { child, wsUrl } = await launchAndWait(userDataDir);
+      try {
+        const cdp = await CdpClient.connect(wsUrl);
         try {
-          const cdp = await CdpClient.connect(wsUrl);
+          const targetSessionId = await attachToFirstPage(cdp);
+          await cdp.send("Page.enable", {}, targetSessionId);
+          await cdp.send(
+            "Page.startScreencast",
+            { format: "jpeg", quality: 80, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 },
+            targetSessionId,
+          );
+
+          const frame = await cdp.waitForEvent("Page.screencastFrame", () => true, 15_000);
+          const jpegBytes = Buffer.from(
+            asString(frame.data, "Page.screencastFrame data"),
+            "base64",
+          );
+          // JPEG magic number: 0xFF 0xD8.
+          expect(jpegBytes[0]).toBe(0xff);
+          expect(jpegBytes[1]).toBe(0xd8);
+
+          await cdp.send(
+            "Page.screencastFrameAck",
+            { sessionId: frame.sessionId },
+            targetSessionId,
+          );
+        } finally {
+          cdp.close();
+        }
+      } finally {
+        await stopChrome(child);
+        rmSync(userDataDir, { recursive: true, force: true });
+      }
+    }, 30_000);
+
+    it("persists the profile across a relaunch", async () => {
+      const userDataDir = mkdtempSync(join(tmpdir(), "omp-gui-browser-test-"));
+      const probeName = "ompGuiPersistenceProbe";
+      const probeValue = randomUUID();
+      const probeUrl = "https://omp-gui-persistence-probe.example/";
+
+      try {
+        // First launch: write a cookie into the persistent profile — CDP's
+        // cookie store can be written/read directly without ever actually
+        // navigating anywhere, keeping this hermetic (no real network).
+        {
+          const { child, wsUrl } = await launchAndWait(userDataDir);
           try {
-            const targetSessionId = await attachToFirstPage(cdp);
-            await cdp.send("Page.enable", {}, targetSessionId);
-            await cdp.send(
-              "Page.startScreencast",
-              { format: "jpeg", quality: 80, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 },
-              targetSessionId,
-            );
-
-            const frame = await cdp.waitForEvent("Page.screencastFrame", () => true, 15_000);
-            const jpegBytes = Buffer.from(asString(frame.data, "Page.screencastFrame data"), "base64");
-            // JPEG magic number: 0xFF 0xD8.
-            expect(jpegBytes[0]).toBe(0xff);
-            expect(jpegBytes[1]).toBe(0xd8);
-
-            await cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }, targetSessionId);
+            const cdp = await CdpClient.connect(wsUrl);
+            try {
+              const targetSessionId = await attachToFirstPage(cdp);
+              await cdp.send(
+                "Network.setCookie",
+                { name: probeName, value: probeValue, url: probeUrl },
+                targetSessionId,
+              );
+            } finally {
+              cdp.close();
+            }
           } finally {
-            cdp.close();
+            await stopChrome(child);
           }
-        } finally {
-          await stopChrome(child);
-          rmSync(userDataDir, { recursive: true, force: true });
         }
-      },
-      30_000,
-    );
 
-    it(
-      "persists the profile across a relaunch",
-      async () => {
-        const userDataDir = mkdtempSync(join(tmpdir(), "omp-gui-browser-test-"));
-        const probeName = "ompGuiPersistenceProbe";
-        const probeValue = randomUUID();
-        const probeUrl = "https://omp-gui-persistence-probe.example/";
-
-        try {
-          // First launch: write a cookie into the persistent profile — CDP's
-          // cookie store can be written/read directly without ever actually
-          // navigating anywhere, keeping this hermetic (no real network).
-          {
-            const { child, wsUrl } = await launchAndWait(userDataDir);
+        // Second launch, same user-data-dir: the cookie — and so the
+        // "log in once, ever" property ADR-0006 promises — must survive.
+        {
+          const { child, wsUrl } = await launchAndWait(userDataDir);
+          try {
+            const cdp = await CdpClient.connect(wsUrl);
             try {
-              const cdp = await CdpClient.connect(wsUrl);
-              try {
-                const targetSessionId = await attachToFirstPage(cdp);
-                await cdp.send(
-                  "Network.setCookie",
-                  { name: probeName, value: probeValue, url: probeUrl },
-                  targetSessionId,
-                );
-              } finally {
-                cdp.close();
-              }
+              const targetSessionId = await attachToFirstPage(cdp);
+              const cookiesResult = await cdp.send(
+                "Network.getCookies",
+                { urls: [probeUrl] },
+                targetSessionId,
+              );
+              const cookies = asArray(cookiesResult.cookies, "Network.getCookies cookies");
+              expect(findCookieValue(cookies, probeName)).toBe(probeValue);
             } finally {
-              await stopChrome(child);
+              cdp.close();
             }
+          } finally {
+            await stopChrome(child);
           }
-
-          // Second launch, same user-data-dir: the cookie — and so the
-          // "log in once, ever" property ADR-0006 promises — must survive.
-          {
-            const { child, wsUrl } = await launchAndWait(userDataDir);
-            try {
-              const cdp = await CdpClient.connect(wsUrl);
-              try {
-                const targetSessionId = await attachToFirstPage(cdp);
-                const cookiesResult = await cdp.send("Network.getCookies", { urls: [probeUrl] }, targetSessionId);
-                const cookies = asArray(cookiesResult.cookies, "Network.getCookies cookies");
-                expect(findCookieValue(cookies, probeName)).toBe(probeValue);
-              } finally {
-                cdp.close();
-              }
-            } finally {
-              await stopChrome(child);
-            }
-          }
-        } finally {
-          rmSync(userDataDir, { recursive: true, force: true });
         }
-      },
-      30_000,
-    );
+      } finally {
+        rmSync(userDataDir, { recursive: true, force: true });
+      }
+    }, 30_000);
   },
 );

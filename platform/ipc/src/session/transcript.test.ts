@@ -22,9 +22,13 @@ import { afterEach, describe, expect, it } from "vite-plus/test";
 import { createIpcClient, type IpcSessionHandle } from "../client";
 import { nodeBridge } from "../bridge/node";
 import { Transcript, type ToolExecutionEntry, type TranscriptSnapshot } from "./transcript";
+import type { RpcCommand } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
+
+type ThinkingLevel = Extract<RpcCommand, { type: "set_thinking_level" }>["level"];
 
 const binary =
-  process.env.OMP_GUI_OMP_PATH ?? join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
+  process.env.OMP_GUI_OMP_PATH ??
+  join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
 
 /**
  * Waits for the transcript's live snapshot to satisfy `predicate`, checking
@@ -77,89 +81,87 @@ describe("Transcript against the pinned omp binary", () => {
     sandbox = undefined;
   });
 
-  it(
-    "streams message/thinking/tool-execution events live and completes",
-    async () => {
-      sandbox = mkdtempSync(join(tmpdir(), "omp-gui-transcript-test-"));
-      const bridge = nodeBridge(binary, sandbox);
-      const client = createIpcClient(bridge);
-      handle = await client.startSession();
-      transcript = new Transcript(handle.session);
+  it("streams message/thinking/tool-execution events live and completes", async () => {
+    sandbox = mkdtempSync(join(tmpdir(), "omp-gui-transcript-test-"));
+    const bridge = nodeBridge(binary, sandbox);
+    const client = createIpcClient(bridge);
+    handle = await client.startSession();
+    transcript = new Transcript(handle.session);
 
-      // Best-effort: exercise the thinking path when the configured model
-      // supports it. Not required for the assertions below.
-      await handle.session.command({ type: "set_thinking_level", level: "high" }).catch(() => {});
+    // Best-effort: exercise the thinking path when the configured model
+    // supports it. Not required for the assertions below.
+    await handle.session
+      .command({ type: "set_thinking_level", level: "high" as ThinkingLevel })
+      .catch(() => {});
 
-      await transcript.sendPrompt(
-        "Use your bash tool to run `echo hello-transcript-test`, then reply with a one-sentence summary of the output.",
-      );
+    await transcript.sendPrompt(
+      "Use your bash tool to run `echo hello-transcript-test`, then reply with a one-sentence summary of the output.",
+    );
 
-      // The optimistic user entry renders synchronously, before any wire round-trip.
-      const first = transcript.getSnapshot().entries[0];
-      expect(first?.kind).toBe("user");
-      expect(first && first.kind === "user" ? first.text : null).toContain("echo hello-transcript-test");
+    // The optimistic user entry renders synchronously, before any wire round-trip.
+    const first = transcript.getSnapshot().entries[0];
+    expect(first?.kind).toBe("user");
+    expect(first && first.kind === "user" ? first.text : null).toContain(
+      "echo hello-transcript-test",
+    );
 
-      await waitForSnapshot(transcript, (snapshot) => snapshot.running, 30_000);
-      const final = await waitForSnapshot(transcript, (snapshot) => !snapshot.running, 120_000);
+    await waitForSnapshot(transcript, (snapshot) => snapshot.running, 30_000);
+    const final = await waitForSnapshot(transcript, (snapshot) => !snapshot.running, 120_000);
 
-      expect(final.aborting).toBe(false);
-      expect(final.entries.some((entry) => entry.kind === "assistant" && entry.text.length > 0)).toBe(true);
+    expect(final.aborting).toBe(false);
+    expect(final.entries.some((entry) => entry.kind === "assistant" && entry.text.length > 0)).toBe(
+      true,
+    );
 
-      const toolEntries = final.entries.filter(
-        (entry): entry is ToolExecutionEntry => entry.kind === "tool",
-      );
-      expect(toolEntries.length).toBeGreaterThan(0);
-      for (const entry of toolEntries) {
-        expect(["done", "error", "aborted"]).toContain(entry.status);
-        expect(entry.toolCallId.length).toBeGreaterThan(0);
+    const toolEntries = final.entries.filter(
+      (entry): entry is ToolExecutionEntry => entry.kind === "tool",
+    );
+    expect(toolEntries.length).toBeGreaterThan(0);
+    for (const entry of toolEntries) {
+      expect(["done", "error", "aborted"]).toContain(entry.status);
+      expect(entry.toolCallId.length).toBeGreaterThan(0);
+    }
+
+    // Every entry the state machine produced is well-formed, regardless of
+    // which entry kinds this particular run happened to exercise.
+    for (const entry of final.entries) {
+      expect(typeof entry.id).toBe("string");
+      expect(entry.id.length).toBeGreaterThan(0);
+      expect(typeof entry.timestamp).toBe("number");
+      if (entry.kind === "assistant" || entry.kind === "thinking") {
+        expect(entry.streaming).toBe(false);
       }
+    }
+  }, 150_000);
 
-      // Every entry the state machine produced is well-formed, regardless of
-      // which entry kinds this particular run happened to exercise.
-      for (const entry of final.entries) {
-        expect(typeof entry.id).toBe("string");
-        expect(entry.id.length).toBeGreaterThan(0);
-        expect(typeof entry.timestamp).toBe("number");
-        if (entry.kind === "assistant" || entry.kind === "thinking") {
-          expect(entry.streaming).toBe(false);
-        }
+  it("abort stops the turn and the transcript reflects it", async () => {
+    sandbox = mkdtempSync(join(tmpdir(), "omp-gui-transcript-abort-test-"));
+    const bridge = nodeBridge(binary, sandbox);
+    const client = createIpcClient(bridge);
+    handle = await client.startSession();
+    transcript = new Transcript(handle.session);
+
+    await transcript.sendPrompt(
+      "Count out loud from one to one hundred, writing exactly one number per line with a short remark on each.",
+    );
+
+    await waitForSnapshot(transcript, (snapshot) => snapshot.running, 30_000);
+    expect(transcript.getSnapshot().running).toBe(true);
+
+    await transcript.abort();
+    const final = await waitForSnapshot(transcript, (snapshot) => !snapshot.running, 60_000);
+
+    expect(final.running).toBe(false);
+    expect(final.aborting).toBe(false);
+    // The abort must be reflected in every entry it interrupted: nothing is
+    // left claiming to still be streaming or still running.
+    for (const entry of final.entries) {
+      if (entry.kind === "assistant" || entry.kind === "thinking") {
+        expect(entry.streaming).toBe(false);
       }
-    },
-    150_000,
-  );
-
-  it(
-    "abort stops the turn and the transcript reflects it",
-    async () => {
-      sandbox = mkdtempSync(join(tmpdir(), "omp-gui-transcript-abort-test-"));
-      const bridge = nodeBridge(binary, sandbox);
-      const client = createIpcClient(bridge);
-      handle = await client.startSession();
-      transcript = new Transcript(handle.session);
-
-      await transcript.sendPrompt(
-        "Count out loud from one to one hundred, writing exactly one number per line with a short remark on each.",
-      );
-
-      await waitForSnapshot(transcript, (snapshot) => snapshot.running, 30_000);
-      expect(transcript.getSnapshot().running).toBe(true);
-
-      await transcript.abort();
-      const final = await waitForSnapshot(transcript, (snapshot) => !snapshot.running, 60_000);
-
-      expect(final.running).toBe(false);
-      expect(final.aborting).toBe(false);
-      // The abort must be reflected in every entry it interrupted: nothing is
-      // left claiming to still be streaming or still running.
-      for (const entry of final.entries) {
-        if (entry.kind === "assistant" || entry.kind === "thinking") {
-          expect(entry.streaming).toBe(false);
-        }
-        if (entry.kind === "tool") {
-          expect(entry.status).not.toBe("running");
-        }
+      if (entry.kind === "tool") {
+        expect(entry.status).not.toBe("running");
       }
-    },
-    90_000,
-  );
+    }
+  }, 90_000);
 });
