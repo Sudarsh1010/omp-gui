@@ -14,6 +14,18 @@ export const commands = {
 	ompSend: (sessionId: string, line: string) => typedError<null, BridgeError>(__TAURI_INVOKE("omp_send", { sessionId, line })),
 	/**  Kill the running omp subprocess for the given session. */
 	ompKill: (sessionId: string) => typedError<null, BridgeError>(__TAURI_INVOKE("omp_kill", { sessionId })),
+	/**
+	 *  Launch (or, if this project already has one running, attach to) the
+	 *  per-project Browser Pane Chromium.
+	 */
+	browserLaunch: (projectPath: string) => typedError<BrowserInfo, BrowserError>(__TAURI_INVOKE("browser_launch", { projectPath })),
+	/**
+	 *  Release this caller's interest in a project's Browser Pane. The Chromium
+	 *  keeps running (and its persistent profile keeps existing) until every
+	 *  caller has released it — mirroring omp's own connected-URL refcount
+	 *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
+	 */
+	browserStop: (projectPath: string) => typedError<null, BrowserError>(__TAURI_INVOKE("browser_stop", { projectPath })),
 };
 
 /** Events */
@@ -25,6 +37,32 @@ export const events = {
 /* Types */
 /**  Errors returned from Shell Bridge commands. */
 export type BridgeError = { type: "binaryNotFound"; message: string } | { type: "spawnFailed"; message: string } | { type: "writeFailed"; message: string } | { type: "killFailed"; message: string } | { type: "unknownSession" };
+
+/**  Errors returned from Browser Pane Shell Bridge commands. */
+export type BrowserError = { type: "chromiumNotFound"; message: string } | { type: "profileDirFailed"; message: string } | { type: "spawnFailed"; message: string } | { type: "launchTimeout"; message: string } | { type: "attachFailed"; message: string } | { type: "frameServerFailed"; message: string } | { type: "unknownProject" };
+
+/**
+ *  Info the frontend needs to render the pane and (later) hand omp's browser
+ *  tool a `connected`-kind CDP URL.
+ */
+export type BrowserInfo = {
+	projectPath: string,
+	/**
+	 *  `http://127.0.0.1:<port>` — omp's `connected` kind requires an HTTP
+	 *  discovery URL, not a raw websocket one (notes/browser.md §2:
+	 *  `normalizeConnectedCdpUrl` rejects `ws(s)://`).
+	 */
+	cdpUrl: string,
+	/**  The browser-level CDP websocket endpoint Chrome printed on startup. */
+	cdpWsUrl: string,
+	/**
+	 *  Localhost WebSocket endpoint streaming raw JPEG screencast frames as
+	 *  binary messages — never through Tauri events (ADR-0007).
+	 */
+	frameEndpoint: string,
+	userDataDir: string,
+	chromiumPath: string,
+};
 
 /**  Where the omp binary was resolved from, in priority order (ADR-0004). */
 export type OmpBinarySource = 

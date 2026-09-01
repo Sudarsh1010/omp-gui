@@ -1,3 +1,4 @@
+mod browser;
 mod omp;
 /// The single specta builder shared by the runtime and the bindings export
 /// test, so the checked-in bindings can never drift from the live handler.
@@ -7,6 +8,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             omp::omp_start,
             omp::omp_send,
             omp::omp_kill,
+            browser::browser_launch,
+            browser::browser_stop,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,
@@ -22,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(omp::OmpState::default())
+        .manage(browser::BrowserState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
