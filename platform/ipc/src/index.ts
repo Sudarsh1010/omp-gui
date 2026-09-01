@@ -37,3 +37,20 @@ export type {
   BrowserError,
   RelayInfo,
 } from "./bindings/bindings.gen";
+
+export {
+  SubagentsStore,
+  SubagentTracker,
+  getSubagentTracker,
+} from "./session/subagents";
+export type {
+  SubagentSummary,
+  SubagentStatus,
+  SubagentProgress,
+  SubagentStreamEntry,
+  SubagentMessageEntry,
+  SubagentThinkingEntry,
+  SubagentToolEntry,
+  SubagentToolStatus,
+  SubagentNoticeEntry,
+} from "./session/subagents";

@@ -12,6 +12,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@omp-gui/ui/compo
 import { PlusIcon, RobotIcon } from "@phosphor-icons/react";
 import { SessionSidebar } from "@gui/components/app/session-sidebar";
 import { SessionView } from "@gui/components/session/session-view";
+import { SubagentPanel } from "@gui/components/session/subagent-panel";
 import { useSessions } from "@gui/session/use-sessions";
 
 export interface AppShellProps {
@@ -25,10 +26,10 @@ export interface AppShellProps {
  * matching `routes/index.tsx`'s existing convention of resolving context
  * once at the route boundary.
  *
- * A subagent panel (a later 2B ticket) is the remaining documented seam
- * from `sessions-store.ts`'s top-of-file comment: it slots in here as a
- * third child of `SidebarInset`, after `SessionView`, keyed off the same
- * `activeId` this component already tracks.
+ * The subagent panel (T12, issue #13) fills the remaining documented seam
+ * from `sessions-store.ts`'s top-of-file comment: it's the third child of
+ * `SidebarInset`, after `SessionView`, keyed off the same `activeId` this
+ * component already tracks.
  */
 export function AppShell({ store }: AppShellProps) {
   const { sessions, activeId, createSession, closeSession, selectSession } = useSessions(store);
@@ -67,6 +68,7 @@ export function AppShell({ store }: AppShellProps) {
             </Empty>
           </div>
         )}
+        <SubagentPanel store={store} sessionId={activeId} />
       </SidebarInset>
     </SidebarProvider>
   );
