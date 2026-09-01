@@ -81,7 +81,8 @@ export function useSubagentStream(
     [subagents, subagentId],
   );
   const getSnapshot = useCallback(
-    () => (subagents && subagentId ? (subagents.getStream(subagentId) ?? EMPTY_STREAM) : EMPTY_STREAM),
+    () =>
+      subagents && subagentId ? (subagents.getStream(subagentId) ?? EMPTY_STREAM) : EMPTY_STREAM,
     [subagents, subagentId],
   );
   return useSyncExternalStore(subscribe, getSnapshot);

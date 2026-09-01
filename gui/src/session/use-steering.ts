@@ -18,7 +18,11 @@ import {
 
 const EMPTY_SNAPSHOT: SteeringSnapshot = {
   ready: false,
-  queueModes: { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time", interruptMode: "immediate" },
+  queueModes: {
+    steeringMode: "one-at-a-time",
+    followUpMode: "one-at-a-time",
+    interruptMode: "immediate",
+  },
   queuedMessageCount: 0,
   pending: { steer: false, followUp: false, abort: false, abortAndPrompt: false },
   lastError: null,
@@ -48,7 +52,10 @@ export function useSteering(store: SessionsStore, sessionId: string): Steering {
   const getSessionSnapshot = useCallback(() => store.getSession(sessionId), [store, sessionId]);
   const session = useSyncExternalStore(store.subscribe, getSessionSnapshot);
 
-  const controller = useMemo(() => (session ? createSteeringController(session) : undefined), [session]);
+  const controller = useMemo(
+    () => (session ? createSteeringController(session) : undefined),
+    [session],
+  );
   useEffect(() => {
     return () => controller?.dispose();
   }, [controller]);
@@ -67,7 +74,10 @@ export function useSteering(store: SessionsStore, sessionId: string): Steering {
       (text: string, queueMode: QueueDrainMode) => void controller?.followUp(text, queueMode),
       [controller],
     ),
-    abortAndPrompt: useCallback((text: string) => void controller?.abortAndPrompt(text), [controller]),
+    abortAndPrompt: useCallback(
+      (text: string) => void controller?.abortAndPrompt(text),
+      [controller],
+    ),
     setSteeringMode: useCallback(
       (mode: QueueDrainMode) => void controller?.setSteeringMode(mode),
       [controller],

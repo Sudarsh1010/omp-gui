@@ -170,7 +170,10 @@ export function createSteeringController(session: RpcSession): SteeringControlle
     }
   });
 
-  async function runAction(key: keyof SteeringPending, send: () => Promise<unknown>): Promise<void> {
+  async function runAction(
+    key: keyof SteeringPending,
+    send: () => Promise<unknown>,
+  ): Promise<void> {
     publish({ pending: { ...snapshot.pending, [key]: true }, lastError: null });
     try {
       await send();

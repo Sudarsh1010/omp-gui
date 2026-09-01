@@ -244,9 +244,7 @@ export function createSessionDirectory(
 
     preview(path: string): Promise<SessionPreview> {
       if (!bridge.readSessionPreview) {
-        return Promise.reject(
-          new Error("this bridge does not support read-only session previews"),
-        );
+        return Promise.reject(new Error("this bridge does not support read-only session previews"));
       }
       return bridge.readSessionPreview(path);
     },

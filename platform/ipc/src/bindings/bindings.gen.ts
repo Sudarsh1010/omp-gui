@@ -82,28 +82,37 @@ export const commands = {
       __TAURI_INVOKE("browser_set_takeover", { projectPath, enabled }),
     ),
   /**
-   *  Enumerate every on-disk session file across all projects, newest-
-   *  first, without spawning omp (issue #8's "list past sessions from
-   *  disk" criterion).
+   *  Enumerate every on-disk session file across all projects, newest-first,
+   *  **without spawning omp** — a plain directory walk plus a bounded header
+   *  read per file (issue #8's "list past sessions from disk" criterion).
+   *  A missing sessions root (fresh install, omp never run) yields an empty
+   *  list rather than an error; an unreadable individual project directory or
+   *  file is skipped rather than failing the whole scan.
    */
   listSessionFiles: () =>
     typedError<SessionFileEntry[], SessionsError>(__TAURI_INVOKE("list_session_files")),
   /**
    *  Best-effort scan for an OS process — other than one this app itself
-   *  spawned — holding `path` open (ADR-0005's single-writer guard).
+   *  spawned — holding `path` open. See the module doc for why this is the
+   *  only reachable signal for a genuinely external process (e.g. a terminal
+   *  `omp`): there is no lock file to read (ADR-0005: "no OS-level lock").
+   *  Missing `lsof` (or any spawn failure) is treated as "nothing detected"
+   *  rather than an error: this is a corruption *mitigation*, so failing open
+   *  (never drive-blocking the user on environment noise) is the right
+   *  default — the deterministic half of the guard (this app's own sessions,
+   *  tracked in `session-directory.ts`) still holds regardless.
    */
   probeForeignSessionLock: (path: string) =>
     typedError<ForeignLockProbe, SessionsError>(
       __TAURI_INVOKE("probe_foreign_session_lock", { path }),
     ),
   /**
-   *  Read-only bounded reconstruction of a session's early messages, for
-   *  the switcher's "view read-only" affordance on a guarded file.
+   *  Read-only bounded reconstruction of a session's early messages, for the
+   *  switcher's "view read-only" affordance on a guarded file — see
+   *  [`SessionPreview`].
    */
   readSessionPreview: (path: string) =>
-    typedError<SessionPreview, SessionsError>(
-      __TAURI_INVOKE("read_session_preview", { path }),
-    ),
+    typedError<SessionPreview, SessionsError>(__TAURI_INVOKE("read_session_preview", { path })),
 };
 
 /** Events */
@@ -134,16 +143,6 @@ export type BrowserError =
   | { type: "relayConfigFailed"; message: string };
 
 /**
- *  Result of probing whether a process outside this app currently has a
- *  session file open (best-effort).
- */
-export type ForeignLockProbe = {
-  locked: boolean;
-  /**  PIDs of the foreign holders, for diagnostics. */
-  pids: number[];
-};
-
-/**
  *  Info the frontend needs to render the pane and (later) hand omp's browser
  *  tool a `connected`-kind CDP URL.
  */
@@ -169,6 +168,16 @@ export type BrowserInfo = {
    *  `browser_set_takeover`).
    */
   takeover: boolean;
+};
+
+/**
+ *  Result of probing whether a process outside this app currently has a
+ *  session file open (best-effort; see module doc).
+ */
+export type ForeignLockProbe = {
+  locked: boolean;
+  /**  PIDs of the foreign holders, for diagnostics. */
+  pids: number[];
 };
 
 /**  Where the omp binary was resolved from, in priority order (ADR-0004). */
@@ -226,7 +235,7 @@ export type RelayInfo = {
   extensionConnected: boolean;
 };
 
-/**  One on-disk session file, lightweight metadata only. */
+/**  One on-disk session file, lightweight metadata only (see module doc). */
 export type SessionFileEntry = {
   /**
    *  Absolute path — the exact string the `switch_session` rpc-ui
@@ -241,8 +250,8 @@ export type SessionFileEntry = {
   /**  Working directory the session was started in; empty if unknown. */
   cwd: string;
   /**
-   *  Freshest known title: the file's `title`-record override if present,
-   *  else the `session` header's own `title`.
+   *  Freshest known title: the file's `title`-record override if
+   *  present, else the `session` header's own `title`.
    */
   title: string | null;
   /**
@@ -251,25 +260,36 @@ export type SessionFileEntry = {
    */
   createdAt: string | null;
   /**
-   *  The file's on-disk mtime, as Unix epoch seconds — always present, and
-   *  what listing sorts newest-first by.
+   *  The file's on-disk mtime, as Unix epoch **seconds** — always
+   *  present, and what listing sorts newest-first by. `u32`, not
+   *  `u64`/`i64`: specta's TypeScript exporter unconditionally aborts on
+   *  64-bit integer fields (`Primitive::u64 | i64 | ... =>
+   *  Err(bigint_forbidden)` in `specta-typescript`, no override short of
+   *  accepting JS `number` precision loss) since they can silently lose
+   *  precision crossing the JSON boundary. Seconds (not milliseconds) in
+   *  a `u32` sidesteps that entirely and is safe until year 2106.
    */
   modifiedAt: number;
-  /**  File size in bytes, saturating at 2^32-1 (~4 GiB). */
+  /**
+   *  File size in bytes, saturating at `u32::MAX` (~4 GiB) for the exact
+   *  same reason `modified_at` is `u32`, not `u64` — no real session
+   *  transcript approaches that size.
+   */
   sizeBytes: number;
 };
 
 /**
  *  A bounded, read-only reconstruction of a session's early messages —
  *  backs the switcher's "view read-only" affordance for a file this app
- *  refuses to drive (ADR-0005). Never opens the file for writing.
+ *  refuses to drive (ADR-0005). Never opens the file for writing, so it
+ *  carries none of `switch_session`'s corruption risk.
  */
 export type SessionPreview = {
   path: string;
   messages: SessionPreviewMessage[];
   /**
-   *  True if more content exists beyond this bounded scan (the message cap
-   *  was hit, or the file is larger than the scan window).
+   *  True if more content exists beyond this bounded scan (the message
+   *  cap was hit, or the file is larger than the scan window).
    */
   truncated: boolean;
 };
@@ -282,7 +302,9 @@ export type SessionPreviewMessage = {
 
 /**  Errors returned from session-directory Shell Bridge commands. */
 export type SessionsError =
+  /**  The user's home directory could not be resolved. */
   | { type: "homeDirUnavailable" }
+  /**  An I/O error while walking or reading the sessions directory. */
   | { type: "ioFailed"; message: string };
 
 /* Tauri Specta runtime */

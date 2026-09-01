@@ -1,8 +1,19 @@
 import { useState } from "react";
-import type { SessionDirectory, SessionFileEntry, SessionPreview, SessionsStore } from "@omp-gui/ipc";
+import type {
+  SessionDirectory,
+  SessionFileEntry,
+  SessionPreview,
+  SessionsStore,
+} from "@omp-gui/ipc";
 import { Alert, AlertDescription } from "@omp-gui/ui/components/alert";
 import { Button } from "@omp-gui/ui/components/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@omp-gui/ui/components/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@omp-gui/ui/components/dialog";
 import {
   Empty,
   EmptyDescription,
@@ -10,8 +21,23 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@omp-gui/ui/components/empty";
-import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "@omp-gui/ui/components/item";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@omp-gui/ui/components/sheet";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@omp-gui/ui/components/item";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@omp-gui/ui/components/sheet";
 import { SidebarMenuButton } from "@omp-gui/ui/components/sidebar";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import {
@@ -220,8 +246,8 @@ export function SessionSwitcher({ store }: SessionSwitcherProps) {
         <SheetHeader>
           <SheetTitle>Past sessions</SheetTitle>
           <SheetDescription>
-            Sessions found on disk, newest first. Resume one to continue it, or view a guarded
-            one read-only.
+            Sessions found on disk, newest first. Resume one to continue it, or view a guarded one
+            read-only.
           </SheetDescription>
         </SheetHeader>
         <div className="flex items-center justify-between px-4">

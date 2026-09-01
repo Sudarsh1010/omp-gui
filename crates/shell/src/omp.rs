@@ -152,7 +152,11 @@ impl OmpState {
     /// "another live process" even though it does hold the session file
     /// open.
     pub(crate) fn child_pids(&self) -> HashSet<u32> {
-        self.children.lock().values().map(|c| c.child.id()).collect()
+        self.children
+            .lock()
+            .values()
+            .map(|c| c.child.id())
+            .collect()
     }
 }
 

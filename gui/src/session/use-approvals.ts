@@ -33,20 +33,14 @@ export function useApprovalInbox(
   answer: (requestId: string, answer: ApprovalAnswer) => void;
 } {
   const registry = getApprovalRegistry(store);
-  const getInboxSnapshot = useCallback(
-    () => registry.getInbox(sessionId),
-    [registry, sessionId],
-  );
+  const getInboxSnapshot = useCallback(() => registry.getInbox(sessionId), [registry, sessionId]);
   const inbox = useSyncExternalStore(store.subscribe, getInboxSnapshot);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => (inbox ? inbox.subscribe(onStoreChange) : () => {}),
     [inbox],
   );
-  const getSnapshot = useCallback(
-    () => (inbox ? inbox.getSnapshot() : EMPTY_APPROVALS),
-    [inbox],
-  );
+  const getSnapshot = useCallback(() => (inbox ? inbox.getSnapshot() : EMPTY_APPROVALS), [inbox]);
   const pending = useSyncExternalStore(subscribe, getSnapshot);
 
   const answer = useCallback(

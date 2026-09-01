@@ -218,7 +218,12 @@ function EditorControls({
 
   return (
     <form className="flex flex-col gap-2" onSubmit={handleSubmit}>
-      <Textarea autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={handleKeyDown} />
+      <Textarea
+        autoFocus
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={handleKeyDown}
+      />
       <Button type="submit" size="sm" className="self-end">
         <CheckIcon />
         Submit

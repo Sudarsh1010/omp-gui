@@ -105,7 +105,11 @@ export function createModelSelection(session: RpcSession): ModelSelection {
   const refreshState = async () => {
     try {
       const response = await session.command({ type: "get_state" });
-      emit({ model: response.data.model, thinkingLevel: response.data.thinkingLevel, error: undefined });
+      emit({
+        model: response.data.model,
+        thinkingLevel: response.data.thinkingLevel,
+        error: undefined,
+      });
     } catch (error) {
       emit({ error: error instanceof Error ? error.message : String(error) });
     }

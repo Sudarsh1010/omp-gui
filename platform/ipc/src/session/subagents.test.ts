@@ -28,7 +28,8 @@ import { createSessionsStore, type SessionsStore } from "./sessions-store";
 import { getSubagentTracker, SubagentsStore } from "./subagents";
 
 const binary =
-  process.env.OMP_GUI_OMP_PATH ?? join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
+  process.env.OMP_GUI_OMP_PATH ??
+  join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
 
 /** Env vars omp's own auth layer resolves a provider from with zero config —
  * same list `smoke.test.ts` gates its live-model cycles behind. */

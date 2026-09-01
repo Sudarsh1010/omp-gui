@@ -18,7 +18,16 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { createIpcClient, type IpcSessionHandle } from "../client";
 import { nodeBridge } from "../bridge/node";
-import { createModelSelection, type ModelSelection, type ModelSelectionSnapshot } from "./models";
+import {
+  createModelSelection,
+  type ModelSelection,
+  type ModelSelectionSnapshot,
+  type SessionThinkingLevel,
+} from "./models";
+
+const binary =
+  process.env.OMP_GUI_OMP_PATH ??
+  join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
 
 /** Await a `ModelSelection`'s snapshot once `predicate` passes — the store
  * notifies synchronously on every change (including the initial
@@ -121,7 +130,7 @@ describe("createModelSelection against the pinned omp binary", () => {
     const initial = await waitForSnapshot(selection, (s) => !s.loading);
 
     // Pick a level distinct from the current one so the switch is observable.
-    const target = initial.thinkingLevel === "high" ? "low" : "high";
+    const target = (initial.thinkingLevel === "high" ? "low" : "high") as SessionThinkingLevel;
 
     await selection.setThinkingLevel(target);
 

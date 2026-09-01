@@ -40,10 +40,12 @@ export function ModelPicker({ store, sessionId }: ModelPickerProps) {
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <Select
+      <Select<string>
         value={model ? `${model.provider}:${model.id}` : null}
-        onValueChange={(value: string) => {
-          const selected = availableModels.find((option) => `${option.provider}:${option.id}` === value);
+        onValueChange={(value) => {
+          const selected = availableModels.find(
+            (option) => `${option.provider}:${option.id}` === value,
+          );
           if (selected) void setModel(selected.provider, selected.id);
         }}
         disabled={loading || availableModels.length === 0}
@@ -53,16 +55,19 @@ export function ModelPicker({ store, sessionId }: ModelPickerProps) {
         </SelectTrigger>
         <SelectContent>
           {availableModels.map((option) => (
-            <SelectItem key={`${option.provider}:${option.id}`} value={`${option.provider}:${option.id}`}>
+            <SelectItem
+              key={`${option.provider}:${option.id}`}
+              value={`${option.provider}:${option.id}`}
+            >
               {option.provider} — {option.name}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
 
-      <Select
+      <Select<SessionThinkingLevel>
         value={thinkingLevel ?? null}
-        onValueChange={(value: SessionThinkingLevel) => void setThinkingLevel(value)}
+        onValueChange={(value) => value && void setThinkingLevel(value)}
         disabled={loading}
       >
         <SelectTrigger size="sm" className="w-32">

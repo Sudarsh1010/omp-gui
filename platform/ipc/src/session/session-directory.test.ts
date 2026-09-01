@@ -61,10 +61,7 @@ function resolveSessionsRoot(): string {
  * Returns the file's absolute path and the project directory it lives in
  * (for cleanup).
  */
-function writeFixtureSessionFile(
-  cwd: string,
-  title: string,
-): { path: string; projectDir: string } {
+function writeFixtureSessionFile(cwd: string, title: string): { path: string; projectDir: string } {
   const projectDir = join(resolveSessionsRoot(), `omp-gui-directory-test-${randomUUID()}`);
   mkdirSync(projectDir, { recursive: true });
   const id = randomUUID();
@@ -198,9 +195,7 @@ describe("SessionDirectory against the pinned omp binary", () => {
     // way to see the session's content.
     const preview = await directory.preview(fixture.path);
     expect(preview.messages.length).toBeGreaterThan(0);
-    expect(preview.messages.some((m) => m.text.includes("hello from a test fixture"))).toBe(
-      true,
-    );
+    expect(preview.messages.some((m) => m.text.includes("hello from a test fixture"))).toBe(true);
   }, 30_000);
 
   it("releases ownership once the driving session closes", async () => {

@@ -232,8 +232,14 @@ fn parse_session_header(prefix: &str) -> SessionHeader {
             }
             Some("session") => {
                 id = value.get("id").and_then(|v| v.as_str()).map(str::to_string);
-                cwd = value.get("cwd").and_then(|v| v.as_str()).map(str::to_string);
-                session_title = value.get("title").and_then(|v| v.as_str()).map(str::to_string);
+                cwd = value
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                session_title = value
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
                 created_at = value
                     .get("timestamp")
                     .and_then(|v| v.as_str())
@@ -276,7 +282,9 @@ fn read_session_entry(path: &Path, file_name: &str) -> Option<SessionFileEntry> 
 
     Some(SessionFileEntry {
         path: path.display().to_string(),
-        id: header.id.unwrap_or_else(|| session_id_from_filename(file_name)),
+        id: header
+            .id
+            .unwrap_or_else(|| session_id_from_filename(file_name)),
         cwd: header.cwd.unwrap_or_default(),
         title: header.title,
         created_at: header.created_at,

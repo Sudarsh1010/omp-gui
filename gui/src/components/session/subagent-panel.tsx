@@ -170,7 +170,9 @@ export function SubagentPanel({ store, sessionId }: SubagentPanelProps) {
       >
         <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-lg">
           <SheetHeader className="shrink-0 border-b border-border">
-            <SheetTitle>{selected ? `${selected.agent} #${selected.index}` : "Subagent"}</SheetTitle>
+            <SheetTitle>
+              {selected ? `${selected.agent} #${selected.index}` : "Subagent"}
+            </SheetTitle>
             <SheetDescription>
               {selected?.description ?? selected?.task ?? selected?.assignment ?? ""}
             </SheetDescription>
@@ -184,13 +186,7 @@ export function SubagentPanel({ store, sessionId }: SubagentPanelProps) {
   );
 }
 
-function SubagentRow({
-  summary,
-  onSelect,
-}: {
-  summary: SubagentSummary;
-  onSelect: () => void;
-}) {
+function SubagentRow({ summary, onSelect }: { summary: SubagentSummary; onSelect: () => void }) {
   const StatusIcon = STATUS_ICON[summary.status];
   return (
     <button

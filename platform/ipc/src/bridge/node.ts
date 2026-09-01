@@ -56,7 +56,10 @@ function toSessionFileEntry(info: {
 /** Reads up to `maxBytes + 1` bytes from the start of `path`; `hitCap` is
  * true when the file is larger than `maxBytes` (a genuine prefix, not the
  * whole file) — mirrors `sessions.rs`'s `read_prefix` exactly. */
-async function readPrefix(path: string, maxBytes: number): Promise<{ text: string; hitCap: boolean }> {
+async function readPrefix(
+  path: string,
+  maxBytes: number,
+): Promise<{ text: string; hitCap: boolean }> {
   const handle = await open(path, "r");
   try {
     const buf = Buffer.alloc(maxBytes + 1);
@@ -113,7 +116,9 @@ async function readSessionPreviewFromDisk(path: string): Promise<SessionPreview>
     const text = extractPreviewText(content);
     if (!text) continue;
     const clipped =
-      text.length > PREVIEW_MAX_TEXT_CHARS ? `${text.slice(0, PREVIEW_MAX_TEXT_CHARS)}\u2026` : text;
+      text.length > PREVIEW_MAX_TEXT_CHARS
+        ? `${text.slice(0, PREVIEW_MAX_TEXT_CHARS)}\u2026`
+        : text;
     messages.push({ role, text: clipped });
   }
 

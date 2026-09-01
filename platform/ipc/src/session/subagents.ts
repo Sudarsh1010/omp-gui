@@ -51,7 +51,10 @@ import type {
 import type { RpcEventFrame, RpcSession } from "./session";
 import type { SessionsStore } from "./sessions-store";
 
-type SessionEvent<T extends RpcSessionEventFrame["type"]> = Extract<RpcSessionEventFrame, { type: T }>;
+type SessionEvent<T extends RpcSessionEventFrame["type"]> = Extract<
+  RpcSessionEventFrame,
+  { type: T }
+>;
 type LifecyclePayload = SessionEvent<"subagent_lifecycle">["payload"];
 type ProgressPayload = SessionEvent<"subagent_progress">["payload"];
 
@@ -426,10 +429,7 @@ export class SubagentsStore {
    */
   readonly ready: Promise<void>;
 
-  constructor(
-    session: RpcSession,
-    level: RpcSubagentSubscriptionLevel = "events",
-  ) {
+  constructor(session: RpcSession, level: RpcSubagentSubscriptionLevel = "events") {
     this.unsubscribeEvent = session.onEvent((frame) => this.onFrame(frame));
     this.unsubscribeExit = session.onExit(() => this.handleExit());
     this.ready = session

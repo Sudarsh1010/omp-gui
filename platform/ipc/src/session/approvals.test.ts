@@ -23,7 +23,8 @@ import { ApprovalInbox, getApprovalRegistry } from "./approvals";
 import type { RpcEventFrame } from "./session";
 
 const binary =
-  process.env.OMP_GUI_OMP_PATH ?? join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
+  process.env.OMP_GUI_OMP_PATH ??
+  join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
 
 /** Env vars omp's own auth layer resolves a provider from with zero
  * config — the same list `smoke.test.ts` gates its live-model suite on. */
@@ -59,7 +60,8 @@ function extractAssistantText(messages: unknown): string {
     const content = message.content;
     if (!Array.isArray(content)) continue;
     for (const block of content) {
-      if (!block || typeof block !== "object" || !("type" in block) || block.type !== "text") continue;
+      if (!block || typeof block !== "object" || !("type" in block) || block.type !== "text")
+        continue;
       if ("text" in block && typeof block.text === "string") parts.push(block.text);
     }
   }
@@ -102,7 +104,9 @@ function waitFor<T>(
 /** Records every frame `RpcSession.onEvent` delivers and lets a test await
  * a predicate over the accumulated list — the minimal piece of `smoke.
  * test.ts`'s `EventRecorder` this suite needs. */
-function recordEvents(session: { onEvent: (handler: (frame: RpcEventFrame) => void) => () => void }): {
+function recordEvents(session: {
+  onEvent: (handler: (frame: RpcEventFrame) => void) => () => void;
+}): {
   seen: RpcEventFrame[];
   subscribe: (listener: () => void) => () => void;
 } {

@@ -18,7 +18,8 @@ import type { RpcEventFrame } from "./session";
 import { createSteeringController, type SteeringController } from "./steering";
 
 const binary =
-  process.env.OMP_GUI_OMP_PATH ?? join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
+  process.env.OMP_GUI_OMP_PATH ??
+  join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
 
 /** Env vars omp's own auth layer resolves a provider from with zero config. */
 const LIVE_MODEL_CREDENTIAL_ENV_VARS = [
@@ -162,7 +163,9 @@ interface SteeringSession {
 
 /** Spawns a fresh pinned-binary session, wires an `EventRecorder` and a
  * `SteeringController` over it, and tears everything down afterward. */
-async function withSteeringSession(run: (session: SteeringSession) => Promise<void>): Promise<void> {
+async function withSteeringSession(
+  run: (session: SteeringSession) => Promise<void>,
+): Promise<void> {
   const sandbox = mkdtempSync(join(tmpdir(), "omp-gui-steering-test-"));
   const bridge = nodeBridge(binary, sandbox);
   const events = new EventRecorder();
@@ -193,7 +196,11 @@ describe("SteeringController queue modes (no live model needed)", () => {
       await waitForReady(controller);
       expect(controller.getSnapshot()).toMatchObject({
         ready: true,
-        queueModes: { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time", interruptMode: "immediate" },
+        queueModes: {
+          steeringMode: "one-at-a-time",
+          followUpMode: "one-at-a-time",
+          interruptMode: "immediate",
+        },
         queuedMessageCount: 0,
       });
     });
@@ -220,17 +227,19 @@ describe("SteeringController queue modes (no live model needed)", () => {
   }, 30_000);
 });
 
-describe.skipIf(
-  !LIVE_MODEL_CREDENTIAL_ENV_VARS.some((name) => Boolean(process.env[name]?.trim())),
-)(
+describe.skipIf(!LIVE_MODEL_CREDENTIAL_ENV_VARS.some((name) => Boolean(process.env[name]?.trim())))(
   "SteeringController against a live model turn (needs ANTHROPIC_API_KEY, ANTHROPIC_OAUTH_TOKEN, OPENAI_API_KEY, or GEMINI_API_KEY)",
   () => {
     it("steer lands mid-turn: a new user/steer entry appears and streaming continues to a steered reply", async () => {
       await withSteeringSession(async ({ handle, events, controller }) => {
-        const turnStarted = events.waitFor((frame) => frame.type === "turn_start", "turn_start for the long count");
+        const turnStarted = events.waitFor(
+          (frame) => frame.type === "turn_start",
+          "turn_start for the long count",
+        );
         void handle.session.command({
           type: "prompt",
-          message: "Do not call any tools. Count from 1 to 60, one number per line, and do not stop until told otherwise.",
+          message:
+            "Do not call any tools. Count from 1 to 60, one number per line, and do not stop until told otherwise.",
         });
         await turnStarted;
 
@@ -238,7 +247,10 @@ describe.skipIf(
           (frame) => isUserMessageContaining(frame, "Stop counting immediately"),
           "message_start for the steer message",
         );
-        const agentEnded = events.waitFor((frame) => frame.type === "agent_end", "agent_end after steer");
+        const agentEnded = events.waitFor(
+          (frame) => frame.type === "agent_end",
+          "agent_end after steer",
+        );
 
         await controller.steer(
           "Stop counting immediately. Your entire next reply must be exactly the single word STEERED.",
@@ -258,10 +270,14 @@ describe.skipIf(
 
     it("followUp queues behind a running turn under the selected queue mode and lands once it completes", async () => {
       await withSteeringSession(async ({ handle, events, controller }) => {
-        const turnStarted = events.waitFor((frame) => frame.type === "turn_start", "turn_start for the first reply");
+        const turnStarted = events.waitFor(
+          (frame) => frame.type === "turn_start",
+          "turn_start for the first reply",
+        );
         void handle.session.command({
           type: "prompt",
-          message: "Do not call any tools. Reply with exactly the single word FIRST and nothing else.",
+          message:
+            "Do not call any tools. Reply with exactly the single word FIRST and nothing else.",
         });
         await turnStarted;
 
@@ -291,10 +307,14 @@ describe.skipIf(
 
     it("abortAndPrompt cancels the running turn and starts a fresh prompt in one action", async () => {
       await withSteeringSession(async ({ handle, events, controller }) => {
-        const turnStarted = events.waitFor((frame) => frame.type === "turn_start", "turn_start for the long count");
+        const turnStarted = events.waitFor(
+          (frame) => frame.type === "turn_start",
+          "turn_start for the long count",
+        );
         void handle.session.command({
           type: "prompt",
-          message: "Do not call any tools. Count from 1 to 60, one number per line, and do not stop until told otherwise.",
+          message:
+            "Do not call any tools. Count from 1 to 60, one number per line, and do not stop until told otherwise.",
         });
         await turnStarted;
 
@@ -310,7 +330,10 @@ describe.skipIf(
         // "one action": a single controller call both tore down the old turn
         // and started the new one — no separate abort() call from the test.
         await newRunStarted;
-        const newRunEnded = await events.waitFor((frame) => frame.type === "agent_end", "agent_end for the replacement prompt");
+        const newRunEnded = await events.waitFor(
+          (frame) => frame.type === "agent_end",
+          "agent_end for the replacement prompt",
+        );
         const text = extractAssistantText(newRunEnded.messages);
         expect(text).toContain("RESTARTED");
         expect(text).not.toContain("60");

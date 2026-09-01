@@ -38,10 +38,7 @@
  * the instant it's read, never against the `response` queue (protocol.md
  * §5.4 "side-channel frames always overtake the queue").
  */
-import type {
-  RpcExtensionUIRequest,
-  RpcExtensionUIResponse,
-} from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
+import type { RpcExtensionUIRequest } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
 import type { RpcEventFrame, RpcSession } from "./session";
 import type { SessionsStore } from "./sessions-store";
 
@@ -78,7 +75,12 @@ export type ApprovalInboxSnapshot = readonly PendingApproval[];
 
 const EMPTY_SNAPSHOT: ApprovalInboxSnapshot = [];
 
-const BLOCKING_METHOD: Record<string, true> = { select: true, confirm: true, input: true, editor: true };
+const BLOCKING_METHOD: Record<string, true> = {
+  select: true,
+  confirm: true,
+  input: true,
+  editor: true,
+};
 
 /**
  * Narrows a blocking-variant `extension_ui_request` frame, or `undefined`

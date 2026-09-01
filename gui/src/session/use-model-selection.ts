@@ -23,7 +23,10 @@ export interface UseModelSelectionResult extends ModelSelectionSnapshot {
   setThinkingLevel: (level: SessionThinkingLevel) => Promise<void>;
 }
 
-export function useModelSelection(store: SessionsStore, sessionId: string): UseModelSelectionResult {
+export function useModelSelection(
+  store: SessionsStore,
+  sessionId: string,
+): UseModelSelectionResult {
   const getSessionSnapshot = useCallback(() => store.getSession(sessionId), [store, sessionId]);
   const session = useSyncExternalStore(store.subscribe, getSessionSnapshot);
 
@@ -41,7 +44,8 @@ export function useModelSelection(store: SessionsStore, sessionId: string): UseM
   const snapshot = useSyncExternalStore(subscribe, getSnapshot);
 
   const setModel = useCallback(
-    (provider: string, modelId: string) => selection?.setModel(provider, modelId) ?? Promise.resolve(),
+    (provider: string, modelId: string) =>
+      selection?.setModel(provider, modelId) ?? Promise.resolve(),
     [selection],
   );
   const setThinkingLevel = useCallback(
