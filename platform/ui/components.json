@@ -1,0 +1,23 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "base-lyra",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "iconLibrary": "phosphor",
+  "aliases": {
+    "components": "@omp-gui/ui/components",
+    "utils": "@omp-gui/ui/lib/utils",
+    "hooks": "@omp-gui/ui/hooks",
+    "lib": "@omp-gui/ui/lib",
+    "ui": "@omp-gui/ui/components"
+  },
+  "rtl": false,
+  "menuColor": "default",
+  "menuAccent": "subtle"
+}

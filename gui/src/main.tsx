@@ -1,6 +1,31 @@
+import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import { RouterProvider, createRouter } from "@tanstack/react-router";
+import { routeTree } from "@gui/route-tree.gen";
+import { QueryClient } from "@tanstack/react-query";
+import { createIpcClient, tauriBridge } from "@omp-gui/ipc";
 
-// No StrictMode: its double-effect would auto-run the round-trip twice and
-// race two omp subprocess handshakes over the shared Tauri event channel.
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<App />);
+const queryClient = new QueryClient();
+const ipc = createIpcClient(tauriBridge());
+
+const router = createRouter({
+  routeTree,
+  defaultStructuralSharing: true,
+  context: { queryClient, ipc },
+});
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
+}
+
+const rootElement = document.getElementById("root")!;
+if (!rootElement.innerHTML) {
+  const root = ReactDOM.createRoot(rootElement);
+  root.render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>,
+  );
+}
