@@ -17,6 +17,8 @@ node_modules
 dist
 dist-ssr
 *.local
+# Impeccable machine-local consent/config (skill expects this untracked)
+**/.impeccable/config.local.json
 # Cargo workspace build output
 /target/
 

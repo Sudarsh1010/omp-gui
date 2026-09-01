@@ -114,6 +114,8 @@ The material character is flat and precise: sharp-cornered rectangles separated 
 - Serif (Merriweather) headings as editorial calm inside a Geist/Geist Mono tool
 - Phosphor icons, 16px default, 12–14px in compact controls
 
+**Provenance.** The implementation's normative token source is `platform/ui/src/styles/globals.css` (`:root`/`.dark` OKLCH custom properties); this file documents it and must never fork a value. When tokens change there, regenerate this file and its `.impeccable/design.json` sidecar with `$impeccable document` — edits flow CSS → DESIGN.md, never the reverse.
+
 ## Colors
 
 A near-monochrome warm-stone field where chroma is reserved for meaning: emerald for the agent's work and success, red for failure and destruction. Both themes are OKLCH throughout; the `.dark` class flips the same token names.
