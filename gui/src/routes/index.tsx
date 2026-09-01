@@ -1,6 +1,16 @@
 import { createFileRoute, useRouteContext } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import type { OmpStartInfo } from "@omp-gui/ipc";
+import { Button } from "@omp-gui/ui/components/button";
+import { Spinner } from "@omp-gui/ui/components/spinner";
+import { Alert, AlertTitle, AlertDescription } from "@omp-gui/ui/components/alert";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@omp-gui/ui/components/card";
 
 type Phase = "idle" | "starting" | "running" | "error";
 
@@ -48,33 +58,48 @@ function Index() {
     void run();
   }, [run]);
 
-  return (
-    <main className="mx-auto py-8 typeset typeset-docs max-w-[48em]">
-      <h1>omp-gui · T1 wire round-trip</h1>
-      <p>
-        Spawns the pinned <code>omp --mode rpc-ui</code> subprocess, parses the <code>ready</code>{" "}
-        frame, negotiates the protocol version, and round-trips a canned <code>get_state</code>{" "}
-        command.
-      </p>
-      <button type="button" onClick={() => void run()} disabled={phase === "starting"}>
-        {phase === "starting" ? "Running…" : "Run round-trip"}
-      </button>
+  const starting = phase === "starting";
 
-      {error && <p>{error}</p>}
+  return (
+    <main className="mx-auto flex max-w-[48em] flex-col gap-4 py-8">
+      <div className="typeset typeset-docs">
+        <h1>omp-gui · T1 wire round-trip</h1>
+        <p>
+          Spawns the pinned <code>omp --mode rpc-ui</code> subprocess, parses the <code>ready</code>{" "}
+          frame, negotiates the protocol version, and round-trips a canned <code>get_state</code>{" "}
+          command.
+        </p>
+      </div>
+
+      <Button type="button" onClick={() => void run()} disabled={starting} className="self-start">
+        {starting && <Spinner />}
+        {starting ? "Running…" : "Run round-trip"}
+      </Button>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertTitle>Round-trip failed</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       {result && (
-        <section>
-          <h2>
-            omp {result.info.version} <small>({result.info.source})</small>
-          </h2>
-          <p>{result.info.path}</p>
-          <h3>ready frame</h3>
-          <pre>{JSON.stringify(result.ready, null, 2)}</pre>
-          <h3>negotiated protocol version</h3>
-          <pre>{result.negotiated}</pre>
-          <h3>get_state response (raw)</h3>
-          <pre>{JSON.stringify(result.canned, null, 2)}</pre>
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              omp {result.info.version} <small>({result.info.source})</small>
+            </CardTitle>
+            <CardDescription>{result.info.path}</CardDescription>
+          </CardHeader>
+          <CardContent className="typeset typeset-docs">
+            <h3>ready frame</h3>
+            <pre>{JSON.stringify(result.ready, null, 2)}</pre>
+            <h3>negotiated protocol version</h3>
+            <pre>{result.negotiated}</pre>
+            <h3>get_state response (raw)</h3>
+            <pre>{JSON.stringify(result.canned, null, 2)}</pre>
+          </CardContent>
+        </Card>
       )}
     </main>
   );
