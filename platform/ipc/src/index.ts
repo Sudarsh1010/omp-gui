@@ -49,3 +49,10 @@ export type {
   SessionOwnership,
   ResumeResult,
 } from "./session/session-directory";
+export { createModelSelection, EMPTY_MODEL_SELECTION_SNAPSHOT, THINKING_LEVELS } from "./session/models";
+export type {
+  ModelSelection,
+  ModelSelectionSnapshot,
+  SessionModel,
+  SessionThinkingLevel,
+} from "./session/models";
