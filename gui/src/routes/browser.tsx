@@ -1,14 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Button } from "@omp-gui/ui/components/button";
 import { Input } from "@omp-gui/ui/components/input";
 import { BrowserPane } from "@gui/components/BrowserPane";
+import { RelayToggle } from "@gui/components/browser/relay-toggle";
 
 export const Route = createFileRoute("/browser")({
   component: BrowserRoute,
 });
 
 function BrowserRoute() {
+  // Placeholder for a real omp session id (issue #12's `sessionId`
+  // parameter, T8's sessions store): this route predates session wiring,
+  // so a stable per-mount id is the best available "which task" key.
+  const sessionId = useId();
   const [projectPath, setProjectPath] = useState("");
   const [activePath, setActivePath] = useState<string | null>(null);
 
@@ -46,7 +51,12 @@ function BrowserRoute() {
         </Button>
       </form>
 
-      {activePath && <BrowserPane key={activePath} projectPath={activePath} />}
+      {activePath && (
+        <div className="flex flex-col gap-3">
+          <RelayToggle key={activePath} sessionId={sessionId} />
+          <BrowserPane key={activePath} projectPath={activePath} />
+        </div>
+      )}
     </main>
   );
 }

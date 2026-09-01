@@ -91,7 +91,11 @@ impl fmt::Display for BridgeError {
     }
 }
 
-fn resolve_omp_path(app: &AppHandle) -> Result<(PathBuf, OmpBinarySource), BridgeError> {
+/// Crate-visible (not just this file's) so `browser.rs`'s relay daemon
+/// (T11) can spawn the same pinned `omp browser-relay`/`omp config`
+/// invocations against the exact binary a session would use, without a
+/// second, driftable copy of this resolution order (ADR-0004).
+pub(crate) fn resolve_omp_path(app: &AppHandle) -> Result<(PathBuf, OmpBinarySource), BridgeError> {
     if let Ok(path) = std::env::var(OVERRIDE_ENV) {
         let path = PathBuf::from(path);
         if path.is_file() {
