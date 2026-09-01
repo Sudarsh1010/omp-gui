@@ -37,3 +37,11 @@ export type {
   BrowserError,
   RelayInfo,
 } from "./bindings/bindings.gen";
+
+export { createModelSelection, EMPTY_MODEL_SELECTION_SNAPSHOT, THINKING_LEVELS } from "./session/models";
+export type {
+  ModelSelection,
+  ModelSelectionSnapshot,
+  SessionModel,
+  SessionThinkingLevel,
+} from "./session/models";
