@@ -1,4 +1,4 @@
-import type { SessionStatus, SessionSummary } from "@omp-gui/ipc";
+import type { SessionsStore, SessionStatus, SessionSummary } from "@omp-gui/ipc";
 import { Badge } from "@omp-gui/ui/components/badge";
 import { Button } from "@omp-gui/ui/components/button";
 import {
@@ -31,6 +31,7 @@ import {
   XCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import { SessionSwitcher } from "@gui/components/app/session-switcher";
 
 export interface SessionSidebarProps {
   sessions: SessionSummary[];
@@ -38,6 +39,11 @@ export interface SessionSidebarProps {
   onCreate: () => void;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
+  /** Threaded through to `SessionSwitcher`'s "Past sessions" section (T7,
+   * issue #8) — the same `SessionsStore` `AppShell` already holds, so
+   * resuming a past session drives it through the one store the rest of
+   * the app uses rather than a second, parallel path. */
+  store: SessionsStore;
 }
 
 const STATUS_LABEL: Record<SessionStatus, string> = {
@@ -74,6 +80,7 @@ export function SessionSidebar({
   onCreate,
   onSelect,
   onClose,
+  store,
 }: SessionSidebarProps) {
   return (
     <Sidebar collapsible="icon">
@@ -135,6 +142,16 @@ export function SessionSidebar({
                 })}
               </SidebarMenu>
             )}
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Past sessions</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SessionSwitcher store={store} />
+              </SidebarMenuItem>
+            </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
