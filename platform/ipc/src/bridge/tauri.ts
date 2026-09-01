@@ -10,7 +10,7 @@ function unwrap<T, E>(result: { status: "ok"; data: T } | { status: "error"; err
 
 export function tauriBridge(): BrowserShellBridge {
   return {
-    start: () => commands.ompStart().then(unwrap),
+    start: (cwd) => commands.ompStart(cwd ?? null).then(unwrap),
     send: async (sessionId, line) => {
       await commands.ompSend(sessionId, line).then(unwrap);
     },

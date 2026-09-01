@@ -232,7 +232,13 @@ export function createSessionDirectory(
           }
         }
 
-        const sessionId = store.createSession();
+        // Spawn the fresh session in the target's recorded cwd so omp's
+        // `switch_session` guard accepts the resume — the rpc-ui protocol
+        // has no cwd-change opt-in, so a cwd mismatch is otherwise reported
+        // as a `cancelled` switch. Empty/unknown cwd falls back to the
+        // bridge default.
+        const recordedCwd = entries.find((entry) => entry.path === path)?.cwd;
+        const sessionId = store.createSession(recordedCwd || undefined);
         const session = await waitForSessionReady(store, sessionId);
         if (!session) {
           void store.closeSession(sessionId);

@@ -26,8 +26,12 @@ export type {
 };
 
 export interface ShellBridge {
-  /** Spawn a subprocess and return its identity metadata. */
-  start(): Promise<OmpStartInfo>;
+  /** Spawn a subprocess and return its identity metadata. `cwd` sets the
+   * subprocess working directory; callers resuming a session pass that
+   * session's recorded cwd so omp's `switch_session` guard (no cwd-change
+   * opt-in over rpc-ui) accepts the resume. Defaults to a bridge-chosen
+   * directory when omitted. */
+  start(cwd?: string): Promise<OmpStartInfo>;
   /** Write one NDJSON command line to the given session's stdin. */
   send(sessionId: string, line: string): Promise<void>;
   /** Kill the subprocess for the given session. */

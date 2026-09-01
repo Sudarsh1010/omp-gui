@@ -174,6 +174,34 @@ describe("SessionDirectory against the pinned omp binary", () => {
     expect(JSON.stringify(messages.data.messages)).toContain("hello from a test fixture");
   }, 30_000);
 
+  it("resumes a session recorded under a different cwd than the app's launch dir", async () => {
+    // Regression (cwd-mismatch): the fresh session omp spawns for a resume
+    // must adopt the target session's recorded cwd. omp's `switch_session`
+    // refuses a resume whose recorded cwd differs from the live process cwd
+    // (the rpc-ui protocol has no cwd-change opt-in), surfacing as a
+    // `cancelled` switch — the exact "operation in flight" report the user
+    // hit switching to a session from another project. The production shell
+    // otherwise spawns every session in $HOME, so this failed for basically
+    // any real session not rooted at home.
+    const bridgeCwd = makeSandbox();
+    const recordedCwd = makeSandbox();
+    const fixture = makeFixture("Cross-cwd fixture", recordedCwd);
+    const bridge = nodeBridge(binary, bridgeCwd);
+    store = createSessionsStore(createIpcClient(bridge));
+    const directory = createSessionDirectory(bridge, store);
+
+    // The switcher lists before resuming; that's what surfaces the recorded
+    // cwd this fix threads into the spawn.
+    await directory.refresh();
+    const result = await directory.resume(fixture.path);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const session = store.getSession(result.sessionId);
+    const messages = await session!.command({ type: "get_messages" });
+    expect(JSON.stringify(messages.data.messages)).toContain("hello from a test fixture");
+  }, 30_000);
+
   it("refuses to drive a file already open in this app and offers read-only", async () => {
     const sandbox = makeSandbox();
     const fixture = makeFixture("Guard fixture", sandbox);

@@ -8,8 +8,16 @@ export const commands = {
   /**
    *  Spawn the pinned omp binary as an rpc-ui subprocess and start piping raw
    *  NDJSON stdout lines to the frontend as `omp:frame` events.
+   *
+   *  `cwd` sets the subprocess working directory. Callers pass the recorded
+   *  cwd of a session they are about to resume so omp's `switch_session` guard
+   *  (which refuses a resume whose recorded cwd differs from the live process
+   *  cwd, since the rpc-ui protocol has no cwd-change opt-in) accepts it.
+   *  Falls back to the user's home directory when omitted, empty, or naming a
+   *  path that is not an existing directory.
    */
-  ompStart: () => typedError<OmpStartInfo, BridgeError>(__TAURI_INVOKE("omp_start")),
+  ompStart: (cwd: string | null) =>
+    typedError<OmpStartInfo, BridgeError>(__TAURI_INVOKE("omp_start", { cwd })),
   /**  Write one NDJSON command line to the subprocess's stdin. */
   ompSend: (sessionId: string, line: string) =>
     typedError<null, BridgeError>(__TAURI_INVOKE("omp_send", { sessionId, line })),

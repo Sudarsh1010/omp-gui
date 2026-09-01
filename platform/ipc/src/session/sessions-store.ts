@@ -72,8 +72,12 @@ export interface SessionsStore {
    * is reflected in `list()`'s `status` (`"idle"` while connecting, then
    * `"running"`/`"idle"` once its `Transcript` exists, or `"error"` if the
    * handshake fails). Becomes the active session. No cap (ADR-0005).
+   * `cwd`, when given, becomes the subprocess working directory (a
+   * resume passes the target session's recorded cwd so omp's
+   * `switch_session` cwd guard accepts it); omitted for a plain new
+   * session, which the bridge spawns in its default directory.
    */
-  createSession(): string;
+  createSession(cwd?: string): string;
   /**
    * Close and remove a session: kills its subprocess, disposes its
    * transcript, and drops it from `list()`. If it was the active session,
@@ -145,7 +149,7 @@ export function createSessionsStore(client: IpcClient): SessionsStore {
   }
 
   return {
-    createSession(): string {
+    createSession(cwd?: string): string {
       const id = `session-${++sessionCounter}`;
       const record: SessionRecord = {
         id,
@@ -164,7 +168,7 @@ export function createSessionsStore(client: IpcClient): SessionsStore {
       publish();
 
       void client
-        .startSession()
+        .startSession(undefined, cwd)
         .then((handle) => {
           // closeSession() already ran while the subprocess was still
           // starting: shut it straight back down instead of leaking it.

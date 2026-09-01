@@ -3,11 +3,11 @@ import type { OmpStartInfo } from "./bindings/bindings.gen";
 import type { ShellBridge } from "./bridge/shell-bridge";
 
 export interface IpcClient {
-  startSession(): Promise<IpcSessionHandle>;
-}
-
-interface IpcClientImpl extends IpcClient {
-  startSession(options?: RpcSessionOptions): Promise<IpcSessionHandle>;
+  /** Start a session's subprocess. `options` attaches an event sink; `cwd`
+   * sets the subprocess working directory (a resume passes the target
+   * session's recorded cwd so omp's `switch_session` cwd guard accepts it).
+   * Both default: no sink, bridge-default directory. */
+  startSession(options?: RpcSessionOptions, cwd?: string): Promise<IpcSessionHandle>;
 }
 
 export interface IpcSessionHandle {
@@ -16,7 +16,7 @@ export interface IpcSessionHandle {
   close(): Promise<void>;
 }
 
-export function createIpcClient(bridge: ShellBridge): IpcClientImpl {
+export function createIpcClient(bridge: ShellBridge): IpcClient {
   const sessions = new Map<
     string,
     {
@@ -38,8 +38,8 @@ export function createIpcClient(bridge: ShellBridge): IpcClientImpl {
   });
 
   return {
-    async startSession(options?: RpcSessionOptions): Promise<IpcSessionHandle> {
-      const info = await bridge.start();
+    async startSession(options?: RpcSessionOptions, cwd?: string): Promise<IpcSessionHandle> {
+      const info = await bridge.start(cwd);
       const handlersFor = (sessionId: string) => {
         let handlers = sessions.get(sessionId);
         if (!handlers) {

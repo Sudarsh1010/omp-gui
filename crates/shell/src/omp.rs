@@ -162,16 +162,30 @@ impl OmpState {
 
 /// Spawn the pinned omp binary as an rpc-ui subprocess and start piping raw
 /// NDJSON stdout lines to the frontend as `omp:frame` events.
+///
+/// `cwd` sets the subprocess working directory. Callers pass the recorded
+/// cwd of a session they are about to resume so omp's `switch_session` guard
+/// (which refuses a resume whose recorded cwd differs from the live process
+/// cwd, since the rpc-ui protocol has no cwd-change opt-in) accepts it.
+/// Falls back to the user's home directory when omitted, empty, or naming a
+/// path that is not an existing directory.
 #[tauri::command]
 #[specta::specta]
-pub fn omp_start(app: AppHandle, state: State<'_, OmpState>) -> Result<OmpStartInfo, BridgeError> {
+pub fn omp_start(
+    app: AppHandle,
+    state: State<'_, OmpState>,
+    cwd: Option<String>,
+) -> Result<OmpStartInfo, BridgeError> {
     let (path, source) = resolve_omp_path(&app)?;
-    let cwd = app
-        .path()
-        .home_dir()
-        .map_err(|e| BridgeError::SpawnFailed {
-            message: e.to_string(),
-        })?;
+    let cwd = match cwd {
+        Some(dir) if !dir.trim().is_empty() && PathBuf::from(&dir).is_dir() => PathBuf::from(dir),
+        _ => app
+            .path()
+            .home_dir()
+            .map_err(|e| BridgeError::SpawnFailed {
+                message: e.to_string(),
+            })?,
+    };
 
     let mut child = Command::new(&path)
         .args(["--mode", "rpc-ui"])

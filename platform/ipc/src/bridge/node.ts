@@ -207,13 +207,13 @@ export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
   };
 
   return {
-    start(): Promise<OmpStartInfo> {
+    start(cwdOverride?: string): Promise<OmpStartInfo> {
       const sessionId = randomUUID();
       const version = execFileSync(binaryPath, ["--version"], {
         encoding: "utf8",
       }).trim();
       const child = spawn(binaryPath, ["--mode", "rpc-ui"], {
-        cwd,
+        cwd: cwdOverride ?? cwd,
         stdio: ["pipe", "pipe", "inherit"],
       });
 
