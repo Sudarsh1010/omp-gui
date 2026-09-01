@@ -15,7 +15,7 @@
  * including thinking, is well-formed (the "every entry is well-formed" sweep
  * in the first test covers that regardless of which kinds actually fired).
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
@@ -164,4 +164,55 @@ describe("Transcript against the pinned omp binary", () => {
       }
     }
   }, 90_000);
+
+  it("reconstructs a structured diff for an edit-tool file change, and none for a non-edit tool call", async () => {
+    sandbox = mkdtempSync(join(tmpdir(), "omp-gui-transcript-diff-test-"));
+    writeFileSync(join(sandbox, "notes.txt"), "hello world\n");
+    const bridge = nodeBridge(binary, sandbox);
+    const client = createIpcClient(bridge);
+    handle = await client.startSession();
+    transcript = new Transcript(handle.session);
+
+    await transcript.sendPrompt(
+      'There is a file named notes.txt in the current directory containing the text "hello world". ' +
+        'Use your edit tool to change the word "hello" to "goodbye" in notes.txt. ' +
+        "Then use your bash tool to run `echo done`. Do not create, rename, or delete any other files.",
+    );
+
+    await waitForSnapshot(transcript, (snapshot) => snapshot.running, 30_000);
+    const final = await waitForSnapshot(transcript, (snapshot) => !snapshot.running, 120_000);
+
+    const toolEntries = final.entries.filter(
+      (entry): entry is ToolExecutionEntry => entry.kind === "tool",
+    );
+
+    const editEntries = toolEntries.filter((entry) => entry.toolName === "edit");
+    expect(editEntries.length).toBeGreaterThan(0);
+    for (const entry of editEntries) {
+      expect(entry.status).toBe("done");
+      expect(entry.diffs).toBeDefined();
+      const diffs = entry.diffs ?? [];
+      expect(diffs.length).toBeGreaterThan(0);
+      for (const file of diffs) {
+        expect(file.raw.length).toBeGreaterThan(0);
+        expect(file.lines.length).toBeGreaterThan(0);
+      }
+      // The reconstructed diff carries the removed old word and the added
+      // new word as distinct, colorable lines — not just raw diff text.
+      const allLines = diffs.flatMap((file) => file.lines);
+      expect(
+        allLines.some((line) => line.kind === "remove" && line.content.includes("hello")),
+      ).toBe(true);
+      expect(
+        allLines.some((line) => line.kind === "add" && line.content.includes("goodbye")),
+      ).toBe(true);
+    }
+
+    // Non-edit tool executions (e.g. bash) must never carry a fabricated diff.
+    const nonEditEntries = toolEntries.filter((entry) => entry.toolName !== "edit");
+    expect(nonEditEntries.length).toBeGreaterThan(0);
+    for (const entry of nonEditEntries) {
+      expect(entry.diffs).toBeUndefined();
+    }
+  }, 150_000);
 });
