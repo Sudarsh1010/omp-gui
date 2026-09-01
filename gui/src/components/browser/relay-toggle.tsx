@@ -62,7 +62,7 @@ export function RelayToggle({ sessionId }: RelayToggleProps) {
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
-      clearInterval(pollRef.current);
+      window.clearInterval(pollRef.current);
       pollRef.current = null;
     }
   }, []);
@@ -75,7 +75,7 @@ export function RelayToggle({ sessionId }: RelayToggleProps) {
     // A quiet background refresh, not a full re-enable: it updates `info`
     // only, so the switch never flickers into a disabled/busy state while
     // this is running.
-    pollRef.current = setInterval(() => {
+    pollRef.current = window.setInterval(() => {
       relayBridge.browserSetRelay(sessionId, true).then(setInfo, () => {});
     }, EXTENSION_POLL_MS);
     return stopPolling;
@@ -121,9 +121,9 @@ export function RelayToggle({ sessionId }: RelayToggleProps) {
       </div>
       {status === "on" && !info?.extensionConnected && (
         <p className="text-xs text-muted-foreground">
-          Relay server is up. Install the extension once with{" "}
-          <code>omp browser-relay install</code>, load it unpacked in Chrome, and keep this
-          task's tabs open there — the agent will drive them as soon as it attaches.
+          Relay server is up. Install the extension once with <code>omp browser-relay install</code>
+          , load it unpacked in Chrome, and keep this task's tabs open there — the agent will drive
+          them as soon as it attaches.
         </p>
       )}
       {error && (

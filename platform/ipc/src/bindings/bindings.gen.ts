@@ -5,111 +5,165 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
-	/**
-	 *  Spawn the pinned omp binary as an rpc-ui subprocess and start piping raw
-	 *  NDJSON stdout lines to the frontend as `omp:frame` events.
-	 */
-	ompStart: () => typedError<OmpStartInfo, BridgeError>(__TAURI_INVOKE("omp_start")),
-	/**  Write one NDJSON command line to the subprocess's stdin. */
-	ompSend: (sessionId: string, line: string) => typedError<null, BridgeError>(__TAURI_INVOKE("omp_send", { sessionId, line })),
-	/**  Kill the running omp subprocess for the given session. */
-	ompKill: (sessionId: string) => typedError<null, BridgeError>(__TAURI_INVOKE("omp_kill", { sessionId })),
-	/**
-	 *  Launch (or, if this project already has one running, attach to) the
-	 *  per-project Browser Pane Chromium.
-	 */
-	browserLaunch: (projectPath: string) => typedError<BrowserInfo, BrowserError>(__TAURI_INVOKE("browser_launch", { projectPath })),
-	/**
-	 *  Release this caller's interest in a project's Browser Pane. The Chromium
-	 *  keeps running (and its persistent profile keeps existing) until every
-	 *  caller has released it — mirroring omp's own connected-URL refcount
-	 *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
-	 */
-	browserStop: (projectPath: string) => typedError<null, BrowserError>(__TAURI_INVOKE("browser_stop", { projectPath })),
-	/**
-	 *  Toggle a session's browser between the app-owned connected Chromium (T9,
-	 *  ADR-0006) and omp's `relay` kind. Enabling stands up the relay server the
-	 *  browser-relay extension connects to (adopting one already running rather
-	 *  than binding a second) and persists `browser.relay` — which omp's own
-	 *  settings resolution checks *before* `browser.cdpUrl`
-	 *  (`config/settings-schema.ts:4509-4519`: "Takes precedence over Browser
-	 *  CDP URL") — so new omp sessions default to it. Disabling is the mirror
-	 *  image: once no session wants relay, the persisted setting is reset and,
-	 *  if this app spawned the daemon, it is torn down (`RelayDaemon::drop`).
-	 *
-	 *  omp has no RPC command for mutating a *running* session's settings (see
-	 *  `set_relay_config`'s doc comment), so a session already streaming when
-	 *  this is called keeps whatever kind it resolved at its own startup — the
-	 *  same, already-accepted gap T9's `connected` CDP URL has today (this
-	 *  file's own doc: "this module never talks to omp about it"). `sessionId`
-	 *  is accepted now so every call site is ready the moment that wiring
-	 *  lands.
-	 */
-	browserSetRelay: (sessionId: string, enabled: boolean) => typedError<RelayInfo, BrowserError>(__TAURI_INVOKE("browser_set_relay", { sessionId, enabled })),
+  /**
+   *  Spawn the pinned omp binary as an rpc-ui subprocess and start piping raw
+   *  NDJSON stdout lines to the frontend as `omp:frame` events.
+   */
+  ompStart: () => typedError<OmpStartInfo, BridgeError>(__TAURI_INVOKE("omp_start")),
+  /**  Write one NDJSON command line to the subprocess's stdin. */
+  ompSend: (sessionId: string, line: string) =>
+    typedError<null, BridgeError>(__TAURI_INVOKE("omp_send", { sessionId, line })),
+  /**  Kill the running omp subprocess for the given session. */
+  ompKill: (sessionId: string) =>
+    typedError<null, BridgeError>(__TAURI_INVOKE("omp_kill", { sessionId })),
+  /**
+   *  Launch (or, if this project already has one running, attach to) the
+   *  per-project Browser Pane Chromium.
+   */
+  browserLaunch: (projectPath: string) =>
+    typedError<BrowserInfo, BrowserError>(__TAURI_INVOKE("browser_launch", { projectPath })),
+  /**
+   *  Release this caller's interest in a project's Browser Pane. The Chromium
+   *  keeps running (and its persistent profile keeps existing) until every
+   *  caller has released it — mirroring omp's own connected-URL refcount
+   *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
+   */
+  browserStop: (projectPath: string) =>
+    typedError<null, BrowserError>(__TAURI_INVOKE("browser_stop", { projectPath })),
+  /**
+   *  Toggle a session's browser between the app-owned connected Chromium (T9,
+   *  ADR-0006) and omp's `relay` kind. Enabling stands up the relay server the
+   *  browser-relay extension connects to (adopting one already running rather
+   *  than binding a second) and persists `browser.relay` — which omp's own
+   *  settings resolution checks *before* `browser.cdpUrl`
+   *  (`config/settings-schema.ts:4509-4519`: "Takes precedence over Browser
+   *  CDP URL") — so new omp sessions default to it. Disabling is the mirror
+   *  image: once no session wants relay, the persisted setting is reset and,
+   *  if this app spawned the daemon, it is torn down (`RelayDaemon::drop`).
+   *
+   *  omp has no RPC command for mutating a *running* session's settings (see
+   *  `set_relay_config`'s doc comment), so a session already streaming when
+   *  this is called keeps whatever kind it resolved at its own startup — the
+   *  same, already-accepted gap T9's `connected` CDP URL has today (this
+   *  file's own doc: "this module never talks to omp about it"). `sessionId`
+   *  is accepted now so every call site is ready the moment that wiring
+   *  lands.
+   */
+  browserSetRelay: (sessionId: string, enabled: boolean) =>
+    typedError<RelayInfo, BrowserError>(
+      __TAURI_INVOKE("browser_set_relay", { sessionId, enabled }),
+    ),
+  /**
+   *  Toggle Takeover for a project's Browser Pane. Two things change:
+   *
+   *  1. Pane input forwarded over the frame WebSocket (see `parse_pane_input`)
+   *     starts (or stops) being dispatched into the live Chromium via the CDP
+   *     pump's `Input.dispatch*` calls (`run_cdp_pump`) — while disabled,
+   *     that same input is still accepted but silently dropped rather than
+   *     dispatched.
+   *  2. Every connected pane for this project — the Chromium is shared
+   *     across concurrent sessions, per `BrowserSession`'s doc comment — is
+   *     notified of the new state over its own WebSocket, so a "you are
+   *     driving" affordance stays correct regardless of which pane flipped
+   *     the toggle.
+   *
+   *  This module has no visibility into omp's own RPC session traffic
+   *  (ADR-0007: Rust never parses rpc-ui protocol frames, it only pipes
+   *  bytes), so it cannot itself hold back the agent's next browser-tool
+   *  call. That half of ADR-0006's "user is driving ... suppressing agent
+   *  input" is implemented on the TypeScript side, in `BrowserPane.tsx`'s
+   *  `denyBrowserApprovalsWhileTakenOver`, which watches this same flag
+   *  (echoed back in `BrowserInfo.takeover` and every pane
+   *  `{"type":"takeover"}` push) and auto-denies the browser tool's approval
+   *  prompt for any attached session while it is set.
+   */
+  browserSetTakeover: (projectPath: string, enabled: boolean) =>
+    typedError<null, BrowserError>(
+      __TAURI_INVOKE("browser_set_takeover", { projectPath, enabled }),
+    ),
 };
 
 /** Events */
 export const events = {
-	ompExit: makeEvent<OmpExitEvent>("omp:exit"),
-	ompFrame: makeEvent<OmpFrameEvent>("omp:frame"),
+  ompExit: makeEvent<OmpExitEvent>("omp:exit"),
+  ompFrame: makeEvent<OmpFrameEvent>("omp:frame"),
 };
 
 /* Types */
 /**  Errors returned from Shell Bridge commands. */
-export type BridgeError = { type: "binaryNotFound"; message: string } | { type: "spawnFailed"; message: string } | { type: "writeFailed"; message: string } | { type: "killFailed"; message: string } | { type: "unknownSession" };
+export type BridgeError =
+  | { type: "binaryNotFound"; message: string }
+  | { type: "spawnFailed"; message: string }
+  | { type: "writeFailed"; message: string }
+  | { type: "killFailed"; message: string }
+  | { type: "unknownSession" };
 
 /**  Errors returned from Browser Pane Shell Bridge commands. */
-export type BrowserError = { type: "chromiumNotFound"; message: string } | { type: "profileDirFailed"; message: string } | { type: "spawnFailed"; message: string } | { type: "launchTimeout"; message: string } | { type: "attachFailed"; message: string } | { type: "frameServerFailed"; message: string } | { type: "unknownProject" } | { type: "relayLaunchFailed"; message: string } | { type: "relayConfigFailed"; message: string };
+export type BrowserError =
+  | { type: "chromiumNotFound"; message: string }
+  | { type: "profileDirFailed"; message: string }
+  | { type: "spawnFailed"; message: string }
+  | { type: "launchTimeout"; message: string }
+  | { type: "attachFailed"; message: string }
+  | { type: "frameServerFailed"; message: string }
+  | { type: "unknownProject" }
+  | { type: "relayLaunchFailed"; message: string }
+  | { type: "relayConfigFailed"; message: string };
 
 /**
  *  Info the frontend needs to render the pane and (later) hand omp's browser
  *  tool a `connected`-kind CDP URL.
  */
 export type BrowserInfo = {
-	projectPath: string,
-	/**
-	 *  `http://127.0.0.1:<port>` — omp's `connected` kind requires an HTTP
-	 *  discovery URL, not a raw websocket one (notes/browser.md §2:
-	 *  `normalizeConnectedCdpUrl` rejects `ws(s)://`).
-	 */
-	cdpUrl: string,
-	/**  The browser-level CDP websocket endpoint Chrome printed on startup. */
-	cdpWsUrl: string,
-	/**
-	 *  Localhost WebSocket endpoint streaming raw JPEG screencast frames as
-	 *  binary messages — never through Tauri events (ADR-0007).
-	 */
-	frameEndpoint: string,
-	userDataDir: string,
-	chromiumPath: string,
+  projectPath: string;
+  /**
+   *  `http://127.0.0.1:<port>` — omp's `connected` kind requires an HTTP
+   *  discovery URL, not a raw websocket one (notes/browser.md §2:
+   *  `normalizeConnectedCdpUrl` rejects `ws(s)://`).
+   */
+  cdpUrl: string;
+  /**  The browser-level CDP websocket endpoint Chrome printed on startup. */
+  cdpWsUrl: string;
+  /**
+   *  Localhost WebSocket endpoint streaming raw JPEG screencast frames as
+   *  binary messages — never through Tauri events (ADR-0007).
+   */
+  frameEndpoint: string;
+  userDataDir: string;
+  chromiumPath: string;
+  /**
+   *  Whether a human is currently driving this pane (see
+   *  `browser_set_takeover`).
+   */
+  takeover: boolean;
 };
 
 /**  Where the omp binary was resolved from, in priority order (ADR-0004). */
-export type OmpBinarySource = 
-/**  `OMP_GUI_OMP_PATH` power-user override. */
-"override" | 
-/**  Repo-local download from `scripts/fetch-omp.mjs` (development). */
-"devBinary" | 
-/**  Binary bundled into the app at build time. */
-"bundled";
+export type OmpBinarySource =
+  /**  `OMP_GUI_OMP_PATH` power-user override. */
+  | "override"
+  /**  Repo-local download from `scripts/fetch-omp.mjs` (development). */
+  | "devBinary"
+  /**  Binary bundled into the app at build time. */
+  | "bundled";
 
 /**  Typed payload for the `omp:exit` event. */
 export type OmpExitEvent = {
-	sessionId: string,
-	code: number,
+  sessionId: string;
+  code: number;
 };
 
 /**  Typed payload for the `omp:frame` event. */
 export type OmpFrameEvent = {
-	sessionId: string,
-	line: string,
+  sessionId: string;
+  line: string;
 };
 
 export type OmpStartInfo = {
-	sessionId: string,
-	version: string,
-	path: string,
-	source: OmpBinarySource,
+  sessionId: string;
+  version: string;
+  path: string;
+  source: OmpBinarySource;
 };
 
 /**
@@ -118,51 +172,64 @@ export type OmpStartInfo = {
  *  Chromium. `cdpUrl`/`extensionEndpoint` are `null` once disabled.
  */
 export type RelayInfo = {
-	sessionId: string,
-	enabled: boolean,
-	/**
-	 *  `http://127.0.0.1:9224` while enabled — the same HTTP CDP-discovery
-	 *  form omp's `connected`/`relay` kinds require (mirrors
-	 *  `BrowserInfo.cdpUrl`; `relay/kind.ts`'s `DEFAULT_RELAY_URL`).
-	 */
-	cdpUrl: string | null,
-	/**  `ws://127.0.0.1:9224/ext` — what the browser-relay Chrome extension dials into (`relay/protocol.ts`). */
-	extensionEndpoint: string | null,
-	/**
-	 *  True once the extension has completed its handshake: the relay's
-	 *  `GET /json/version` answers `200` rather than `503` (`relay/server.ts`).
-	 */
-	extensionConnected: boolean,
+  sessionId: string;
+  enabled: boolean;
+  /**
+   *  `http://127.0.0.1:9224` while enabled — the same HTTP CDP-discovery
+   *  form omp's `connected`/`relay` kinds require (mirrors
+   *  `BrowserInfo::cdp_url`; `relay/kind.ts`'s `DEFAULT_RELAY_URL`).
+   */
+  cdpUrl: string | null;
+  /**
+   *  `ws://127.0.0.1:9224/ext` — what the browser-relay Chrome extension
+   *  dials into (`relay/protocol.ts`).
+   */
+  extensionEndpoint: string | null;
+  /**
+   *  True once the extension has completed its handshake: the relay's
+   *  `GET /json/version` answers `200` rather than `503`
+   *  (`relay/server.ts`).
+   */
+  extensionConnected: boolean;
 };
 
 /* Tauri Specta runtime */
-async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
-    try {
-        return { status: "ok", data: await result };
-    } catch (e) {
-        if (e instanceof Error) throw e;
-        return { status: "error", error: e as any };
-    }
+async function typedError<T, E>(
+  result: Promise<T>,
+): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+  try {
+    return { status: "ok", data: await result };
+  } catch (e) {
+    if (e instanceof Error) throw e;
+    return { status: "error", error: e as any };
+  }
 }
 
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
 
-function makeEvent<T>(name: string, serialize?: (payload: T) => unknown, deserialize?: (payload: any) => T) {
-    const mapEvent = (cb: __TAURI_EVENT.EventCallback<T>) => (event: __TAURI_EVENT.Event<any>) => cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
-    const mapPayload = (payload: T) => serialize ? serialize(payload) : payload;
+function makeEvent<T>(
+  name: string,
+  serialize?: (payload: T) => unknown,
+  deserialize?: (payload: any) => T,
+) {
+  const mapEvent = (cb: __TAURI_EVENT.EventCallback<T>) => (event: __TAURI_EVENT.Event<any>) =>
+    cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
+  const mapPayload = (payload: T) => (serialize ? serialize(payload) : payload);
 
-    const base = {
-        listen: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.once(name, mapEvent(cb)),
-        emit: ((payload: T) => __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>
-    };
+  const base = {
+    listen: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
+    once: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.once(name, mapEvent(cb)),
+    emit: ((payload: T) =>
+      __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>,
+  };
 
-    const fn = (target: import("@tauri-apps/api/webview").Webview | import("@tauri-apps/api/window").Window) => ({
-        listen: (cb: __TAURI_EVENT.EventCallback<T>) => target.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<T>) => target.once(name, mapEvent(cb)),
-        emit: ((payload: T) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>
-    });
+  const fn = (
+    target: import("@tauri-apps/api/webview").Webview | import("@tauri-apps/api/window").Window,
+  ) => ({
+    listen: (cb: __TAURI_EVENT.EventCallback<T>) => target.listen(name, mapEvent(cb)),
+    once: (cb: __TAURI_EVENT.EventCallback<T>) => target.once(name, mapEvent(cb)),
+    emit: ((payload: T) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>,
+  });
 
-    return Object.assign(fn, base);
+  return Object.assign(fn, base);
 }
-

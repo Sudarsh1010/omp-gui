@@ -21,7 +21,8 @@ import { nodeBridge } from "../bridge/node";
 import { createSessionsStore, type SessionsStore } from "./sessions-store";
 
 const binary =
-  process.env.OMP_GUI_OMP_PATH ?? join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
+  process.env.OMP_GUI_OMP_PATH ??
+  join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
 
 /**
  * Resolves once `predicate()` is true, re-checking on every store
@@ -86,7 +87,10 @@ describe("SessionsStore against the pinned omp binary", () => {
     expect(s.getTranscript(idA)).toBeUndefined();
     expect(s.getTranscript(idB)).toBeUndefined();
 
-    await waitForStore(s, () => s.getTranscript(idA) !== undefined && s.getTranscript(idB) !== undefined);
+    await waitForStore(
+      s,
+      () => s.getTranscript(idA) !== undefined && s.getTranscript(idB) !== undefined,
+    );
 
     expect(s.list().find((session) => session.id === idA)?.status).toBe("idle");
     expect(s.list().find((session) => session.id === idB)?.status).toBe("idle");
@@ -96,7 +100,10 @@ describe("SessionsStore against the pinned omp binary", () => {
     const s = makeStore();
     const idA = s.createSession();
     const idB = s.createSession();
-    await waitForStore(s, () => s.getTranscript(idA) !== undefined && s.getTranscript(idB) !== undefined);
+    await waitForStore(
+      s,
+      () => s.getTranscript(idA) !== undefined && s.getTranscript(idB) !== undefined,
+    );
 
     const transcriptA = s.getTranscript(idA)!;
     const transcriptB = s.getTranscript(idB)!;
@@ -108,7 +115,10 @@ describe("SessionsStore against the pinned omp binary", () => {
     await transcriptA.sendPrompt("say the single word: hello");
 
     expect(transcriptA.getSnapshot().entries.length).toBeGreaterThan(0);
-    expect(transcriptA.getSnapshot().entries[0]).toMatchObject({ kind: "user", text: expect.any(String) });
+    expect(transcriptA.getSnapshot().entries[0]).toMatchObject({
+      kind: "user",
+      text: expect.any(String),
+    });
     expect(transcriptB.getSnapshot().entries).toEqual([]);
     expect(s.list().find((session) => session.id === idB)?.status).toBe("idle");
   }, 30_000);
@@ -117,7 +127,10 @@ describe("SessionsStore against the pinned omp binary", () => {
     const s = makeStore();
     const idA = s.createSession();
     const idB = s.createSession();
-    await waitForStore(s, () => s.getTranscript(idA) !== undefined && s.getTranscript(idB) !== undefined);
+    await waitForStore(
+      s,
+      () => s.getTranscript(idA) !== undefined && s.getTranscript(idB) !== undefined,
+    );
     const transcriptB = s.getTranscript(idB)!;
 
     await s.closeSession(idA);
@@ -139,7 +152,10 @@ describe("SessionsStore against the pinned omp binary", () => {
     expect(s.activeId).toBe(idB);
     // Wait for both to be fully up before closing one, so this test's
     // cleanup always closes a resolved subprocess handle like the others.
-    await waitForStore(s, () => s.getTranscript(idA) !== undefined && s.getTranscript(idB) !== undefined);
+    await waitForStore(
+      s,
+      () => s.getTranscript(idA) !== undefined && s.getTranscript(idB) !== undefined,
+    );
 
     await s.closeSession(idB);
 

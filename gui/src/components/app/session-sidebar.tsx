@@ -68,7 +68,13 @@ const STATUS_ICON_CLASS: Record<SessionStatus, string> = {
  * T4's approval inbox populates (see `sessions-store.ts`'s top-of-file
  * comment) — this component only renders whatever number it's given.
  */
-export function SessionSidebar({ sessions, activeId, onCreate, onSelect, onClose }: SessionSidebarProps) {
+export function SessionSidebar({
+  sessions,
+  activeId,
+  onCreate,
+  onSelect,
+  onClose,
+}: SessionSidebarProps) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="flex flex-row items-center justify-between gap-2 px-2">
@@ -90,7 +96,9 @@ export function SessionSidebar({ sessions, activeId, onCreate, onSelect, onClose
                     <StackIcon />
                   </EmptyMedia>
                   <EmptyTitle className="text-xs">No sessions yet</EmptyTitle>
-                  <EmptyDescription className="text-xs">Start one to dispatch work.</EmptyDescription>
+                  <EmptyDescription className="text-xs">
+                    Start one to dispatch work.
+                  </EmptyDescription>
                 </EmptyHeader>
               </Empty>
             ) : (
@@ -104,7 +112,10 @@ export function SessionSidebar({ sessions, activeId, onCreate, onSelect, onClose
                         onClick={() => onSelect(session.id)}
                         tooltip={`${session.title} — ${STATUS_LABEL[session.status]}`}
                       >
-                        <StatusIcon weight="fill" className={cn("size-3.5", STATUS_ICON_CLASS[session.status])} />
+                        <StatusIcon
+                          weight="fill"
+                          className={cn("size-3.5", STATUS_ICON_CLASS[session.status])}
+                        />
                         <span className="truncate">{session.title}</span>
                         {session.pendingApprovals > 0 && (
                           <Badge variant="destructive" className="ml-auto">

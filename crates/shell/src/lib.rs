@@ -11,6 +11,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             browser::browser_launch,
             browser::browser_stop,
             browser::browser_set_relay,
+            browser::browser_set_takeover,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,

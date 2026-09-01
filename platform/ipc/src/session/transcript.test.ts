@@ -203,9 +203,9 @@ describe("Transcript against the pinned omp binary", () => {
       expect(
         allLines.some((line) => line.kind === "remove" && line.content.includes("hello")),
       ).toBe(true);
-      expect(
-        allLines.some((line) => line.kind === "add" && line.content.includes("goodbye")),
-      ).toBe(true);
+      expect(allLines.some((line) => line.kind === "add" && line.content.includes("goodbye"))).toBe(
+        true,
+      );
     }
 
     // Non-edit tool executions (e.g. bash) must never carry a fabricated diff.

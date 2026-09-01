@@ -38,6 +38,15 @@ export interface ShellBridge {
    * reason `browserLaunch`/`browserStop` are.
    */
   browserSetRelay?(sessionId: string, enabled: boolean): Promise<RelayInfo>;
+  /**
+   * Toggle Takeover for a project's Browser Pane: while enabled, pane
+   * mouse/keyboard input is dispatched into the live Chromium; while
+   * disabled, agent-driven browser use resumes (see
+   * `crates/shell/src/browser.rs`'s `browser_set_takeover` and
+   * `BrowserPane.tsx`'s `denyBrowserApprovalsWhileTakenOver`). Optional for
+   * the same reason as `browserLaunch`/`browserStop`.
+   */
+  browserSetTakeover?(projectPath: string, enabled: boolean): Promise<void>;
 }
 
 /**
@@ -46,7 +55,9 @@ export interface ShellBridge {
  * launching its own Chrome for Testing.
  */
 export type BrowserShellBridge = ShellBridge &
-  Required<Pick<ShellBridge, "browserLaunch" | "browserStop" | "browserSetRelay">>;
+  Required<
+    Pick<ShellBridge, "browserLaunch" | "browserStop" | "browserSetRelay" | "browserSetTakeover">
+  >;
 
 export class BridgeCommandError<E = BridgeError> extends Error {
   constructor(readonly error: E) {

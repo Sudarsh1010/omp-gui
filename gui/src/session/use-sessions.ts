@@ -45,7 +45,10 @@ export function useSessions(store: SessionsStore): {
 
 /** One session's summary row (title/status/pendingApprovals), or `undefined`
  * if `sessionId` isn't tracked (e.g. it was just closed). */
-export function useSessionSummary(store: SessionsStore, sessionId: string): SessionSummary | undefined {
+export function useSessionSummary(
+  store: SessionsStore,
+  sessionId: string,
+): SessionSummary | undefined {
   const getSummarySnapshot = useCallback(
     () => store.list().find((session) => session.id === sessionId),
     [store, sessionId],
@@ -77,8 +80,14 @@ export function useSessionTranscript(
   sendPrompt: (text: string) => void;
   abort: () => void;
 } {
-  const getTranscriptSnapshot = useCallback(() => store.getTranscript(sessionId), [store, sessionId]);
-  const transcript: Transcript | undefined = useSyncExternalStore(store.subscribe, getTranscriptSnapshot);
+  const getTranscriptSnapshot = useCallback(
+    () => store.getTranscript(sessionId),
+    [store, sessionId],
+  );
+  const transcript: Transcript | undefined = useSyncExternalStore(
+    store.subscribe,
+    getTranscriptSnapshot,
+  );
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => (transcript ? transcript.subscribe(onStoreChange) : () => {}),
