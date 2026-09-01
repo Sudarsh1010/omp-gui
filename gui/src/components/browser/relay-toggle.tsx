@@ -119,6 +119,10 @@ export function RelayToggle({ sessionId }: RelayToggleProps) {
           </Badge>
         )}
       </div>
+      <p className="text-xs text-muted-foreground">
+        Applies to sessions started after this toggle — a session already running keeps whichever
+        browser kind it resolved at its own startup.
+      </p>
       {status === "on" && !info?.extensionConnected && (
         <p className="text-xs text-muted-foreground">
           Relay server is up. Install the extension once with <code>omp browser-relay install</code>

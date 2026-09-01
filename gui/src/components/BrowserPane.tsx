@@ -502,7 +502,8 @@ export function BrowserPane({ projectPath, attachedSessionIds = [] }: BrowserPan
           {takeover && (
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-1.5 border-b border-destructive bg-card/90 py-1 text-xs font-medium text-destructive">
               <HandPointingIcon weight="fill" />
-              You are driving — agent input is held back
+              You are driving — this denies the agent's next browser approval; under
+              auto-approve, its current turn may not be interrupted
             </div>
           )}
           {frameUrl ? (
