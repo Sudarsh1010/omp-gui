@@ -21,6 +21,9 @@ export type {
   TranscriptImage,
 } from "./session/transcript";
 
+export { createSessionsStore } from "./session/sessions-store";
+export type { SessionsStore, SessionStatus, SessionSummary } from "./session/sessions-store";
+
 export type {
   OmpStartInfo,
   OmpBinarySource,
