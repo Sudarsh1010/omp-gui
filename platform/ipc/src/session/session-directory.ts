@@ -147,6 +147,14 @@ export function createSessionDirectory(
    * the switch has actually landed. */
   const claims = new Map<string, string | null>();
   const listeners = new Set<() => void>();
+  /** Cached `ownedByApp` snapshots, one per claimed path, so `ownerOf`
+   * returns a referentially stable object while a path's `sessionId` is
+   * unchanged — required by `useSyncExternalStore`'s `Object.is` snapshot
+   * comparison (a fresh object every call is an infinite render loop). The
+   * `free`/`pending` cases use the shared constants below. */
+  const ownedSnapshots = new Map<string, { state: "ownedByApp"; sessionId: string }>();
+  const FREE: SessionOwnership = { state: "free" };
+  const PENDING: SessionOwnership = { state: "pending" };
 
   function notify(): void {
     for (const listener of listeners) listener();
@@ -191,9 +199,16 @@ export function createSessionDirectory(
 
     ownerOf(path: string): SessionOwnership {
       const claim = claims.get(path);
-      if (claim === undefined) return { state: "free" };
-      if (claim === null) return { state: "pending" };
-      return { state: "ownedByApp", sessionId: claim };
+      if (claim === undefined) {
+        ownedSnapshots.delete(path);
+        return FREE;
+      }
+      if (claim === null) return PENDING;
+      const cached = ownedSnapshots.get(path);
+      if (cached?.sessionId === claim) return cached;
+      const snapshot = { state: "ownedByApp" as const, sessionId: claim };
+      ownedSnapshots.set(path, snapshot);
+      return snapshot;
     },
 
     async resume(path: string): Promise<ResumeResult> {
