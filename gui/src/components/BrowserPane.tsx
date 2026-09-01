@@ -86,10 +86,15 @@ export function isBrowserToolApprovalRequest(line: string): { id: string } | nul
   if (!("type" in frame) || !("method" in frame)) return null;
   if (frame.type !== "extension_ui_request" || frame.method !== "select") return null;
   if (!("id" in frame) || !("title" in frame) || !("options" in frame)) return null;
-  if (typeof frame.id !== "string" || typeof frame.title !== "string" || !Array.isArray(frame.options)) {
+  if (
+    typeof frame.id !== "string" ||
+    typeof frame.title !== "string" ||
+    !Array.isArray(frame.options)
+  ) {
     return null;
   }
-  if (!frame.title.startsWith(BROWSER_TOOL_APPROVAL_PREFIX) || !frame.options.includes("Deny")) return null;
+  if (!frame.title.startsWith(BROWSER_TOOL_APPROVAL_PREFIX) || !frame.options.includes("Deny"))
+    return null;
   return { id: frame.id };
 }
 
@@ -116,7 +121,10 @@ export function denyBrowserApprovalsWhileTakenOver(
     const pending = isBrowserToolApprovalRequest(line);
     if (!pending) return;
     void bridge
-      .send(sessionId, JSON.stringify({ type: "extension_ui_response", id: pending.id, value: "Deny" }))
+      .send(
+        sessionId,
+        JSON.stringify({ type: "extension_ui_response", id: pending.id, value: "Deny" }),
+      )
       .catch(() => {
         // Best-effort: a session that has already exited or stopped
         // listening has nothing left to suppress.
@@ -150,7 +158,10 @@ function cdpModifiers(event: {
   shiftKey: boolean;
 }): number {
   return (
-    (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0)
+    (event.altKey ? 1 : 0) |
+    (event.ctrlKey ? 2 : 0) |
+    (event.metaKey ? 4 : 0) |
+    (event.shiftKey ? 8 : 0)
   );
 }
 
@@ -203,7 +214,11 @@ function paneCoordinates(
  * WebSocket (frames down, input up — see `parse_pane_input` in
  * `crates/shell/src/browser.rs`). Silently drops it if the socket is not
  * currently open; there is no queueing for a pane that has yet to connect. */
-function sendPaneInput(ws: WebSocket | null, method: string, params: Record<string, unknown>): void {
+function sendPaneInput(
+  ws: WebSocket | null,
+  method: string,
+  params: Record<string, unknown>,
+): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ method, params }));
 }
@@ -285,7 +300,12 @@ export function BrowserPane({ projectPath, attachedSessionIds = [] }: BrowserPan
   // for this subscription to stay stable across renders.
   const attachedSessionsKey = attachedSessionIds.join(",");
   useEffect(
-    () => denyBrowserApprovalsWhileTakenOver(browserBridge, attachedSessionIds, () => takeoverRef.current),
+    () =>
+      denyBrowserApprovalsWhileTakenOver(
+        browserBridge,
+        attachedSessionIds,
+        () => takeoverRef.current,
+      ),
     [attachedSessionsKey],
   );
 
@@ -502,8 +522,8 @@ export function BrowserPane({ projectPath, attachedSessionIds = [] }: BrowserPan
           {takeover && (
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-1.5 border-b border-destructive bg-card/90 py-1 text-xs font-medium text-destructive">
               <HandPointingIcon weight="fill" />
-              You are driving — this denies the agent's next browser approval; under
-              auto-approve, its current turn may not be interrupted
+              You are driving — this denies the agent's next browser approval; under auto-approve,
+              its current turn may not be interrupted
             </div>
           )}
           {frameUrl ? (

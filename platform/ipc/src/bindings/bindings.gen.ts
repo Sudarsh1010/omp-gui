@@ -44,10 +44,9 @@ export const commands = {
    *  omp has no RPC command for mutating a *running* session's settings (see
    *  `set_relay_config`'s doc comment), so a session already streaming when
    *  this is called keeps whatever kind it resolved at its own startup — the
-   *  same, already-accepted gap T9's `connected` CDP URL has today (this
-   *  file's own doc: "this module never talks to omp about it"). `sessionId`
-   *  is accepted now so every call site is ready the moment that wiring
-   *  lands.
+   *  same, already-accepted gap `set_connected_cdp_config` documents for T9's
+   *  `connected` CDP URL. `sessionId` is accepted now so every call site is
+   *  ready the moment a per-running-session config lever exists.
    */
   browserSetRelay: (sessionId: string, enabled: boolean) =>
     typedError<RelayInfo, BrowserError>(
@@ -140,7 +139,8 @@ export type BrowserError =
   | { type: "frameServerFailed"; message: string }
   | { type: "unknownProject" }
   | { type: "relayLaunchFailed"; message: string }
-  | { type: "relayConfigFailed"; message: string };
+  | { type: "relayConfigFailed"; message: string }
+  | { type: "cdpConfigFailed"; message: string };
 
 /**
  *  Info the frontend needs to render the pane and (later) hand omp's browser
