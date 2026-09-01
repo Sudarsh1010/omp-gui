@@ -12,6 +12,10 @@ Default canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 Multi-context: root `CONTEXT-MAP.md` points to per-context `CONTEXT.md` files; system-wide ADRs in `docs/adr/`. See `docs/agents/domain.md`.
 
+### Building UI
+
+Any React UI surface in this repo MUST use `@omp-gui/ui` (`platform/ui`) — never hand-roll primitives. New primitives are added to `platform/ui` via shadcn; app-specific compositions live in the consuming app. See `docs/agents/ui.md`.
+
 <!--VITE PLUS START-->
 
 # Using Vite+, the Unified Toolchain for the Web

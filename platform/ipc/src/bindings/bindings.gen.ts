@@ -8,16 +8,115 @@ export const commands = {
 	/**
 	 *  Spawn the pinned omp binary as an rpc-ui subprocess and start piping raw
 	 *  NDJSON stdout lines to the frontend as `omp:frame` events.
+	 * 
+	 *  `cwd` sets the subprocess working directory. Callers pass the recorded
+	 *  cwd of a session they are about to resume so omp's `switch_session` guard
+	 *  (which refuses a resume whose recorded cwd differs from the live process
+	 *  cwd, since the rpc-ui protocol has no cwd-change opt-in) accepts it.
+	 *  Falls back to the user's home directory when omitted, empty, or naming a
+	 *  path that is not an existing directory.
 	 */
-	ompStart: () => typedError<OmpStartInfo, BridgeError>(__TAURI_INVOKE("omp_start")),
+	ompStart: (cwd: string | null) => typedError<OmpStartInfo, BridgeError>(__TAURI_INVOKE("omp_start", { cwd })),
 	/**  Write one NDJSON command line to the subprocess's stdin. */
 	ompSend: (sessionId: string, line: string) => typedError<null, BridgeError>(__TAURI_INVOKE("omp_send", { sessionId, line })),
 	/**  Kill the running omp subprocess for the given session. */
 	ompKill: (sessionId: string) => typedError<null, BridgeError>(__TAURI_INVOKE("omp_kill", { sessionId })),
+	/**
+	 *  Launch (or, if this project already has one running, attach to) the
+	 *  per-project Browser Pane Chromium.
+	 */
+	browserLaunch: (projectPath: string) => typedError<BrowserInfo, BrowserError>(__TAURI_INVOKE("browser_launch", { projectPath })),
+	/**
+	 *  Release this caller's interest in a project's Browser Pane. The Chromium
+	 *  keeps running (and its persistent profile keeps existing) until every
+	 *  caller has released it — mirroring omp's own connected-URL refcount
+	 *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
+	 */
+	browserStop: (projectPath: string) => typedError<null, BrowserError>(__TAURI_INVOKE("browser_stop", { projectPath })),
+	/**
+	 *  Toggle a session's browser between the app-owned connected Chromium (T9,
+	 *  ADR-0006) and omp's `relay` kind. Enabling stands up the relay server the
+	 *  browser-relay extension connects to (adopting one already running rather
+	 *  than binding a second) and persists `browser.relay` — which omp's own
+	 *  settings resolution checks *before* `browser.cdpUrl`
+	 *  (`config/settings-schema.ts:4509-4519`: "Takes precedence over Browser
+	 *  CDP URL") — so new omp sessions default to it. Disabling is the mirror
+	 *  image: once no session wants relay, the persisted setting is reset and,
+	 *  if this app spawned the daemon, it is torn down (`RelayDaemon::drop`).
+	 * 
+	 *  omp has no RPC command for mutating a *running* session's settings (see
+	 *  `set_relay_config`'s doc comment), so a session already streaming when
+	 *  this is called keeps whatever kind it resolved at its own startup — the
+	 *  same, already-accepted gap `set_connected_cdp_config` documents for T9's
+	 *  `connected` CDP URL. `sessionId` is accepted now so every call site is
+	 *  ready the moment a per-running-session config lever exists.
+	 */
+	browserSetRelay: (sessionId: string, enabled: boolean) => typedError<RelayInfo, BrowserError>(__TAURI_INVOKE("browser_set_relay", { sessionId, enabled })),
+	/**
+	 *  Toggle Takeover for a project's Browser Pane. Two things change:
+	 * 
+	 *  1. Pane input forwarded over the frame WebSocket (see `parse_pane_input`)
+	 *     starts (or stops) being dispatched into the live Chromium via the CDP
+	 *     pump's `Input.dispatch*` calls (`run_cdp_pump`) — while disabled,
+	 *     that same input is still accepted but silently dropped rather than
+	 *     dispatched.
+	 *  2. Every connected pane for this project — the Chromium is shared
+	 *     across concurrent sessions, per `BrowserSession`'s doc comment — is
+	 *     notified of the new state over its own WebSocket, so a "you are
+	 *     driving" affordance stays correct regardless of which pane flipped
+	 *     the toggle.
+	 * 
+	 *  This module has no visibility into omp's own RPC session traffic
+	 *  (ADR-0007: Rust never parses rpc-ui protocol frames, it only pipes
+	 *  bytes), so it cannot itself hold back the agent's next browser-tool
+	 *  call. That half of ADR-0006's "user is driving ... suppressing agent
+	 *  input" is implemented on the TypeScript side, in `BrowserPane.tsx`'s
+	 *  `denyBrowserApprovalsWhileTakenOver`, which watches this same flag
+	 *  (echoed back in `BrowserInfo.takeover` and every pane
+	 *  `{"type":"takeover"}` push) and auto-denies the browser tool's approval
+	 *  prompt for any attached session while it is set.
+	 */
+	browserSetTakeover: (projectPath: string, enabled: boolean) => typedError<null, BrowserError>(__TAURI_INVOKE("browser_set_takeover", { projectPath, enabled })),
+	/**
+	 *  Download and install a headed Chrome for Testing (Stable), returning the
+	 *  installed executable path. Progress streams as `ChromiumInstallEvent`s;
+	 *  the command itself resolves only on completion, so the frontend awaits
+	 *  it and re-launches. Idempotent-ish: a concurrent call fails fast rather
+	 *  than double-downloading.
+	 */
+	browserInstallChromium: () => typedError<string, BrowserError>(__TAURI_INVOKE("browser_install_chromium")),
+	/**
+	 *  Enumerate every on-disk session file across all projects, newest-first,
+	 *  **without spawning omp** — a plain directory walk plus a bounded header
+	 *  read per file (issue #8's "list past sessions from disk" criterion).
+	 *  A missing sessions root (fresh install, omp never run) yields an empty
+	 *  list rather than an error; an unreadable individual project directory or
+	 *  file is skipped rather than failing the whole scan.
+	 */
+	listSessionFiles: () => typedError<SessionFileEntry[], SessionsError>(__TAURI_INVOKE("list_session_files")),
+	/**
+	 *  Best-effort scan for an OS process — other than one this app itself
+	 *  spawned — holding `path` open. See the module doc for why this is the
+	 *  only reachable signal for a genuinely external process (e.g. a terminal
+	 *  `omp`): there is no lock file to read (ADR-0005: "no OS-level lock").
+	 *  Missing `lsof` (or any spawn failure) is treated as "nothing detected"
+	 *  rather than an error: this is a corruption *mitigation*, so failing open
+	 *  (never drive-blocking the user on environment noise) is the right
+	 *  default — the deterministic half of the guard (this app's own sessions,
+	 *  tracked in `session-directory.ts`) still holds regardless.
+	 */
+	probeForeignSessionLock: (path: string) => typedError<ForeignLockProbe, SessionsError>(__TAURI_INVOKE("probe_foreign_session_lock", { path })),
+	/**
+	 *  Read-only bounded reconstruction of a session's early messages, for the
+	 *  switcher's "view read-only" affordance on a guarded file — see
+	 *  [`SessionPreview`].
+	 */
+	readSessionPreview: (path: string) => typedError<SessionPreview, SessionsError>(__TAURI_INVOKE("read_session_preview", { path })),
 };
 
 /** Events */
 export const events = {
+	chromiumInstallProgress: makeEvent<ChromiumInstallEvent>("chromium-install:progress"),
 	ompExit: makeEvent<OmpExitEvent>("omp:exit"),
 	ompFrame: makeEvent<OmpFrameEvent>("omp:frame"),
 };
@@ -25,6 +124,60 @@ export const events = {
 /* Types */
 /**  Errors returned from Shell Bridge commands. */
 export type BridgeError = { type: "binaryNotFound"; message: string } | { type: "spawnFailed"; message: string } | { type: "writeFailed"; message: string } | { type: "killFailed"; message: string } | { type: "unknownSession" };
+
+/**  Errors returned from Browser Pane Shell Bridge commands. */
+export type BrowserError = { type: "chromiumNotFound"; message: string } | { type: "profileDirFailed"; message: string } | { type: "spawnFailed"; message: string } | { type: "launchTimeout"; message: string } | { type: "attachFailed"; message: string } | { type: "frameServerFailed"; message: string } | { type: "unknownProject" } | { type: "relayLaunchFailed"; message: string } | { type: "relayConfigFailed"; message: string } | { type: "cdpConfigFailed"; message: string } | { type: "installFailed"; message: string };
+
+/**
+ *  Info the frontend needs to render the pane and (later) hand omp's browser
+ *  tool a `connected`-kind CDP URL.
+ */
+export type BrowserInfo = {
+	projectPath: string,
+	/**
+	 *  `http://127.0.0.1:<port>` — omp's `connected` kind requires an HTTP
+	 *  discovery URL, not a raw websocket one (notes/browser.md §2:
+	 *  `normalizeConnectedCdpUrl` rejects `ws(s)://`).
+	 */
+	cdpUrl: string,
+	/**  The browser-level CDP websocket endpoint Chrome printed on startup. */
+	cdpWsUrl: string,
+	/**
+	 *  Localhost WebSocket endpoint streaming raw JPEG screencast frames as
+	 *  binary messages — never through Tauri events (ADR-0007).
+	 */
+	frameEndpoint: string,
+	userDataDir: string,
+	chromiumPath: string,
+	/**
+	 *  Whether a human is currently driving this pane (see
+	 *  `browser_set_takeover`).
+	 */
+	takeover: boolean,
+};
+
+/**
+ *  Typed payload for the `chromium-install:progress` event. Byte counts are
+ *  `u32` (caps at 4 GiB) because specta's default TypeScript export rejects
+ *  `u64`; Chrome for Testing zips are ~150 MB.
+ */
+export type ChromiumInstallEvent = {
+	phase: ChromiumInstallPhase,
+	receivedBytes: number,
+	totalBytes: number | null,
+};
+
+export type ChromiumInstallPhase = "resolving" | "downloading" | "extracting";
+
+/**
+ *  Result of probing whether a process outside this app currently has a
+ *  session file open (best-effort; see module doc).
+ */
+export type ForeignLockProbe = {
+	locked: boolean,
+	/**  PIDs of the foreign holders, for diagnostics. */
+	pids: number[],
+};
 
 /**  Where the omp binary was resolved from, in priority order (ADR-0004). */
 export type OmpBinarySource = 
@@ -53,6 +206,105 @@ export type OmpStartInfo = {
 	path: string,
 	source: OmpBinarySource,
 };
+
+/**
+ *  Info the frontend needs to reflect the Relay toggle's state — the
+ *  `sessionId`-scoped mirror of `BrowserInfo` for the T9 app-owned
+ *  Chromium. `cdpUrl`/`extensionEndpoint` are `null` once disabled.
+ */
+export type RelayInfo = {
+	sessionId: string,
+	enabled: boolean,
+	/**
+	 *  `http://127.0.0.1:9224` while enabled — the same HTTP CDP-discovery
+	 *  form omp's `connected`/`relay` kinds require (mirrors
+	 *  `BrowserInfo::cdp_url`; `relay/kind.ts`'s `DEFAULT_RELAY_URL`).
+	 */
+	cdpUrl: string | null,
+	/**
+	 *  `ws://127.0.0.1:9224/ext` — what the browser-relay Chrome extension
+	 *  dials into (`relay/protocol.ts`).
+	 */
+	extensionEndpoint: string | null,
+	/**
+	 *  True once the extension has completed its handshake: the relay's
+	 *  `GET /json/version` answers `200` rather than `503`
+	 *  (`relay/server.ts`).
+	 */
+	extensionConnected: boolean,
+};
+
+/**  One on-disk session file, lightweight metadata only (see module doc). */
+export type SessionFileEntry = {
+	/**
+	 *  Absolute path — the exact string the `switch_session` rpc-ui
+	 *  command's `sessionPath` field expects.
+	 */
+	path: string,
+	/**
+	 *  The session's own id, from its `session` header record (falls back
+	 *  to the uuid embedded in the filename if the header can't be read).
+	 */
+	id: string,
+	/**  Working directory the session was started in; empty if unknown. */
+	cwd: string,
+	/**
+	 *  Freshest known title: the file's `title`-record override if
+	 *  present, else the `session` header's own `title`.
+	 */
+	title: string | null,
+	/**
+	 *  The session header's own `timestamp`, verbatim (already ISO 8601 as
+	 *  written by omp) — relayed as-is rather than reparsed/reformatted.
+	 */
+	createdAt: string | null,
+	/**
+	 *  The file's on-disk mtime, as Unix epoch **seconds** — always
+	 *  present, and what listing sorts newest-first by. `u32`, not
+	 *  `u64`/`i64`: specta's TypeScript exporter unconditionally aborts on
+	 *  64-bit integer fields (`Primitive::u64 | i64 | ... =>
+	 *  Err(bigint_forbidden)` in `specta-typescript`, no override short of
+	 *  accepting JS `number` precision loss) since they can silently lose
+	 *  precision crossing the JSON boundary. Seconds (not milliseconds) in
+	 *  a `u32` sidesteps that entirely and is safe until year 2106.
+	 */
+	modifiedAt: number,
+	/**
+	 *  File size in bytes, saturating at `u32::MAX` (~4 GiB) for the exact
+	 *  same reason `modified_at` is `u32`, not `u64` — no real session
+	 *  transcript approaches that size.
+	 */
+	sizeBytes: number,
+};
+
+/**
+ *  A bounded, read-only reconstruction of a session's early messages —
+ *  backs the switcher's "view read-only" affordance for a file this app
+ *  refuses to drive (ADR-0005). Never opens the file for writing, so it
+ *  carries none of `switch_session`'s corruption risk.
+ */
+export type SessionPreview = {
+	path: string,
+	messages: SessionPreviewMessage[],
+	/**
+	 *  True if more content exists beyond this bounded scan (the message
+	 *  cap was hit, or the file is larger than the scan window).
+	 */
+	truncated: boolean,
+};
+
+/**  One extracted message from `read_session_preview`'s bounded read-only scan. */
+export type SessionPreviewMessage = {
+	role: string,
+	text: string,
+};
+
+/**  Errors returned from session-directory Shell Bridge commands. */
+export type SessionsError = 
+/**  The user's home directory could not be resolved. */
+{ type: "homeDirUnavailable" } | 
+/**  An I/O error while walking or reading the sessions directory. */
+{ type: "ioFailed"; message: string };
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

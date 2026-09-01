@@ -17,6 +17,21 @@ specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta-typescript = "0.0.12"
 uuid = { version = "1", features = ["v4"] }
+# Browser Pane (ADR-0006, ADR-0007): a dedicated tokio runtime drives the
+# app's second CDP client (screencast attach) and the localhost frame server.
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "io-util"] }
+tokio-tungstenite = "0.30"
+futures-util = "0.3"
+# Decodes `Page.screencastFrame`'s base64 JPEG payload.
+base64 = "0.22"
+# Cheaply-cloneable frame payloads shared across every connected pane client.
+bytes = "1"
+# Chromium installer (ADR-0006): fetches a headed Chrome for Testing —
+# omp itself only downloads the headless-only `chrome-headless-shell`.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+# Extracts the Chrome for Testing zip on non-macOS (macOS uses `ditto`,
+# which restores the .app bundle's framework symlinks).
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Profiles only take effect at the workspace root. See the optimization
 # guideline: https://tauri.app/concept/size/#cargo-configuration
