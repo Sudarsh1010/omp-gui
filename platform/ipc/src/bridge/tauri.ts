@@ -28,6 +28,8 @@ export function tauriBridge(): BrowserShellBridge {
     browserSetTakeover: async (projectPath, enabled) => {
       await commands.browserSetTakeover(projectPath, enabled).then(unwrap);
     },
+    browserInstallChromium: () => commands.browserInstallChromium().then(unwrap),
+    onChromiumInstallProgress: (handler) => subscribe(events.chromiumInstallProgress, handler),
     listSessionFiles: () => commands.listSessionFiles().then(unwrap),
     probeForeignSessionLock: (path) => commands.probeForeignSessionLock(path).then(unwrap),
     readSessionPreview: (path) => commands.readSessionPreview(path).then(unwrap),

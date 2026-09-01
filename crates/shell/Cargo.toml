@@ -24,5 +24,8 @@ tokio-tungstenite.workspace = true
 futures-util.workspace = true
 base64.workspace = true
 bytes.workspace = true
+reqwest.workspace = true
+zip.workspace = true
+
 [dev-dependencies]
 specta-typescript.workspace = true

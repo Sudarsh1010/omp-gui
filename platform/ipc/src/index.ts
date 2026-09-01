@@ -52,6 +52,8 @@ export type {
   OmpExitEvent,
   BrowserInfo,
   BrowserError,
+  ChromiumInstallEvent,
+  ChromiumInstallPhase,
   RelayInfo,
   SessionFileEntry,
   SessionsError,

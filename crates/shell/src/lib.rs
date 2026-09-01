@@ -1,4 +1,5 @@
 mod browser;
+mod chromium_install;
 mod omp;
 mod sessions;
 /// The single specta builder shared by the runtime and the bindings export
@@ -13,6 +14,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             browser::browser_stop,
             browser::browser_set_relay,
             browser::browser_set_takeover,
+            chromium_install::browser_install_chromium,
             sessions::list_session_files,
             sessions::probe_foreign_session_lock,
             sessions::read_session_preview,
@@ -20,6 +22,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,
             omp::OmpExitEvent,
+            chromium_install::ChromiumInstallEvent,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
@@ -32,6 +35,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(omp::OmpState::default())
         .manage(browser::BrowserState::default())
+        .manage(chromium_install::ChromiumInstallState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
@@ -43,7 +47,6 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use crate::omp;
     use std::path::PathBuf;
 
     #[test]

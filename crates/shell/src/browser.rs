@@ -116,6 +116,7 @@ pub enum BrowserError {
     RelayLaunchFailed { message: String },
     RelayConfigFailed { message: String },
     CdpConfigFailed { message: String },
+    InstallFailed { message: String },
 }
 
 impl fmt::Display for BrowserError {
@@ -136,6 +137,9 @@ impl fmt::Display for BrowserError {
             }
             Self::CdpConfigFailed { message } => {
                 write!(f, "browser CDP config failed: {message}")
+            }
+            Self::InstallFailed { message } => {
+                write!(f, "chromium install failed: {message}")
             }
         }
     }
@@ -499,10 +503,14 @@ pub fn browser_set_takeover(
 /// `PUPPETEER_EXECUTABLE_PATH` / our own override always win; otherwise scan
 /// the standard `@puppeteer/browsers` cache layout (`<root>/chrome/<platform
 /// >-<buildId>/<relative>`) under both the ecosystem-default cache and omp's
-/// own managed-browser cache, so a Chrome for Testing the user already has —
-/// via either `npx @puppeteer/browsers install` or omp's own headless
-/// downloads — is reused instead of demanding a fresh bundle (notes/
-/// browser.md §5). We don't bundle one ourselves yet, so failing here must
+/// own managed-browser cache, so a *headed* Chrome for Testing the user
+/// already has — via `npx @puppeteer/browsers install chrome@stable` — is
+/// reused instead of demanding a fresh bundle (notes/browser.md §5). omp's
+/// builtin browser tool downloads `chrome-headless-shell` (headless-only),
+/// which the pane must never drive — ADR-0006 requires a headed binary
+/// because headless fingerprints trip bot detection — so that download is
+/// deliberately NOT matched here. We don't bundle one ourselves yet, so
+/// failing here must
 /// give the user an actionable next step.
 fn resolve_chromium_executable(app: &AppHandle) -> Result<PathBuf, BrowserError> {
     for env_var in [CHROMIUM_OVERRIDE_ENV, PUPPETEER_EXECUTABLE_ENV] {
@@ -528,8 +536,10 @@ fn resolve_chromium_executable(app: &AppHandle) -> Result<PathBuf, BrowserError>
 
     Err(BrowserError::ChromiumNotFound {
         message: format!(
-            "no Chrome for Testing binary found. Install one (e.g. `npx @puppeteer/browsers install \
-             chrome@stable`), run omp's browser tool once to let it download its own copy, or set \
+            "no Chrome for Testing binary found. The Browser Pane needs a headed \
+             Chrome for Testing (ADR-0006); omp's builtin browser tool only downloads \
+             headless `chrome-headless-shell`, which cannot be used here. Install a headed \
+             build with `npx @puppeteer/browsers install chrome@stable`, or set \
              {CHROMIUM_OVERRIDE_ENV} / {PUPPETEER_EXECUTABLE_ENV} to an existing Chrome binary."
         ),
     })
@@ -553,7 +563,7 @@ fn find_chrome_in_cache(cache_root: &Path, relative_executable: &Path) -> Option
 /// Mirrors `@puppeteer/browsers`' `relativeExecutablePath()`
 /// (`browser-data/chrome.js`), which is what actually lays out the cache
 /// directories this module scans.
-fn chrome_for_testing_relative_path() -> PathBuf {
+pub(crate) fn chrome_for_testing_relative_path() -> PathBuf {
     if cfg!(target_os = "macos") {
         let arch_folder = if cfg!(target_arch = "aarch64") {
             "mac-arm64"

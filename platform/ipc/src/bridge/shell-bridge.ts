@@ -10,6 +10,7 @@ import type {
   SessionsError,
   ForeignLockProbe,
   SessionPreview,
+  ChromiumInstallEvent,
 } from "../bindings/bindings.gen";
 
 export type {
@@ -23,6 +24,7 @@ export type {
   SessionsError,
   ForeignLockProbe,
   SessionPreview,
+  ChromiumInstallEvent,
 };
 
 export interface ShellBridge {
@@ -92,6 +94,16 @@ export interface ShellBridge {
    * for the same reason as `listSessionFiles`.
    */
   readSessionPreview?(path: string): Promise<SessionPreview>;
+  /**
+   * Download a headed Chrome for Testing (Stable) into the cache
+   * `browserLaunch` scans, resolving with the installed executable path.
+   * ADR-0006 requires a headed binary — omp's own browser tool only ever
+   * downloads the headless-only `chrome-headless-shell` — so acquisition
+   * is the shell's job. Progress streams via `onChromiumInstallProgress`.
+   */
+  browserInstallChromium?(): Promise<string>;
+  /** Subscribe to `browserInstallChromium` progress events. */
+  onChromiumInstallProgress?(handler: (e: ChromiumInstallEvent) => void): () => void;
 }
 
 /**
@@ -101,7 +113,15 @@ export interface ShellBridge {
  */
 export type BrowserShellBridge = ShellBridge &
   Required<
-    Pick<ShellBridge, "browserLaunch" | "browserStop" | "browserSetRelay" | "browserSetTakeover">
+    Pick<
+      ShellBridge,
+      | "browserLaunch"
+      | "browserStop"
+      | "browserSetRelay"
+      | "browserSetTakeover"
+      | "browserInstallChromium"
+      | "onChromiumInstallProgress"
+    >
   >;
 
 export class BridgeCommandError<E = BridgeError> extends Error {

@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { tauriBridge, type BrowserInfo, type ShellBridge } from "@omp-gui/ipc";
+import {
+  tauriBridge,
+  BridgeCommandError,
+  type BrowserInfo,
+  type ChromiumInstallEvent,
+  type ChromiumInstallPhase,
+  type ShellBridge,
+} from "@omp-gui/ipc";
 import { Button } from "@omp-gui/ui/components/button";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import { Badge } from "@omp-gui/ui/components/badge";
@@ -20,8 +27,10 @@ import {
   EmptyDescription,
   EmptyContent,
 } from "@omp-gui/ui/components/empty";
+import { Progress, ProgressLabel, ProgressValue } from "@omp-gui/ui/components/progress";
 import { cn } from "@omp-gui/ui/lib/utils";
 import {
+  DownloadSimpleIcon,
   GlobeIcon,
   HandPalmIcon,
   HandPointingIcon,
@@ -96,6 +105,33 @@ export function isBrowserToolApprovalRequest(line: string): { id: string } | nul
   if (!frame.title.startsWith(BROWSER_TOOL_APPROVAL_PREFIX) || !frame.options.includes("Deny"))
     return null;
   return { id: frame.id };
+}
+
+/** True when a bridge rejection is the structured `chromiumNotFound`
+ * launch error — the one failure the pane can repair itself (via
+ * `browserInstallChromium`) rather than merely report. */
+function isChromiumNotFound(e: unknown): boolean {
+  if (!(e instanceof BridgeCommandError)) return false;
+  const { error } = e;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "type" in error &&
+    error.type === "chromiumNotFound"
+  );
+}
+
+const INSTALL_PHASE_LABEL: Record<ChromiumInstallPhase, string> = {
+  resolving: "Resolving latest Stable Chrome for Testing…",
+  downloading: "Downloading Chrome for Testing…",
+  extracting: "Extracting…",
+};
+
+/** Percent for the download's determinate stretch; null (indeterminate)
+ * while resolving/extracting or when Content-Length is unknown. */
+function installProgressValue(e: ChromiumInstallEvent): number | null {
+  if (e.phase !== "downloading" || e.totalBytes === null || e.totalBytes === 0) return null;
+  return Math.min(100, Math.round((e.receivedBytes / e.totalBytes) * 100));
 }
 
 /**
@@ -239,6 +275,8 @@ export function BrowserPane({ projectPath, attachedSessionIds = [] }: BrowserPan
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [takeover, setTakeover] = useState(false);
   const [takeoverPending, setTakeoverPending] = useState(false);
+  const [chromiumMissing, setChromiumMissing] = useState(false);
+  const [install, setInstall] = useState<ChromiumInstallEvent | null>(null);
   const frameUrlRef = useRef<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const takeoverRef = useRef(false);
@@ -248,6 +286,7 @@ export function BrowserPane({ projectPath, attachedSessionIds = [] }: BrowserPan
   const launch = useCallback(async () => {
     setStatus("launching");
     setError(null);
+    setChromiumMissing(false);
     try {
       const launched = await browserBridge.browserLaunch(projectPath);
       setInfo(launched);
@@ -255,9 +294,30 @@ export function BrowserPane({ projectPath, attachedSessionIds = [] }: BrowserPan
       setStatus("live");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setChromiumMissing(isChromiumNotFound(e));
       setStatus("error");
     }
   }, [projectPath]);
+
+  /** Repair the one launch failure the pane can fix itself: download a
+   * headed Chrome for Testing into the cache `browser_launch` scans (see
+   * `browserInstallChromium`'s doc comment), then launch again. */
+  const installChromium = useCallback(async () => {
+    setError(null);
+    setInstall({ phase: "resolving", receivedBytes: 0, totalBytes: null });
+    const unsubscribe = browserBridge.onChromiumInstallProgress(setInstall);
+    try {
+      await browserBridge.browserInstallChromium();
+      setChromiumMissing(false);
+      await launch();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setStatus("error");
+    } finally {
+      unsubscribe();
+      setInstall(null);
+    }
+  }, [launch]);
 
   const stop = useCallback(async () => {
     const current = info;
@@ -493,7 +553,7 @@ export function BrowserPane({ projectPath, attachedSessionIds = [] }: BrowserPan
             <Button
               type="button"
               size="sm"
-              disabled={status === "launching"}
+              disabled={status === "launching" || install !== null}
               onClick={() => void launch()}
             >
               {status === "launching" ? <Spinner /> : <PlayIcon />}
@@ -507,8 +567,30 @@ export function BrowserPane({ projectPath, attachedSessionIds = [] }: BrowserPan
           <Alert variant="destructive" className="m-3 w-auto">
             <WarningIcon />
             <AlertTitle>Browser Pane failed</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>
+              {error}
+              {chromiumMissing && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 w-fit"
+                  onClick={() => void installChromium()}
+                >
+                  <DownloadSimpleIcon />
+                  Install Chrome for Testing (~150 MB)
+                </Button>
+              )}
+            </AlertDescription>
           </Alert>
+        )}
+        {install && (
+          <div className="m-3">
+            <Progress value={installProgressValue(install)}>
+              <ProgressLabel>{INSTALL_PHASE_LABEL[install.phase]}</ProgressLabel>
+              {installProgressValue(install) !== null && <ProgressValue />}
+            </Progress>
+          </div>
         )}
 
         <div
