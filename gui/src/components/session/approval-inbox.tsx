@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { FormEvent, KeyboardEvent } from "react";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import type { ApprovalAnswer, ApprovalRequest, SessionsStore } from "@omp-gui/ipc";
 import { Badge } from "@omp-gui/ui/components/badge";
 import { Button } from "@omp-gui/ui/components/button";
@@ -20,6 +20,7 @@ import {
   NotePencilIcon,
   TextAaIcon,
   XIcon,
+  type Icon,
 } from "@phosphor-icons/react";
 import { useApprovalNotifications } from "@gui/session/use-approval-notifications";
 import { useApprovalInbox } from "@gui/session/use-approvals";
@@ -85,32 +86,69 @@ interface ApprovalCardProps {
   onAnswer: (answer: ApprovalAnswer) => void;
 }
 
-function ApprovalCard({ request, onAnswer }: ApprovalCardProps) {
-  const Icon = METHOD_ICON[request.method];
+export interface ExtensionUiCardProps {
+  /** Icon shown beside the title — every blocking `extension_ui_request`
+   * variant this inbox renders (T4) and the OAuth `open_url` elicitation
+   * (T14's login panel) share this same header chrome. */
+  icon: Icon;
+  title: string;
+  /** Short tag in the header's corner (e.g. the request's `method`, or
+   * "Login" for an OAuth elicitation). */
+  badgeLabel: string;
+  description?: string;
+  children: ReactNode;
+}
+
+/**
+ * Shared card chrome for one `extension_ui_request` frame: icon + title +
+ * badge header, optional description, then method-specific controls as
+ * `children`. Extracted so `login-panel.tsx`'s OAuth `open_url`
+ * elicitation (T14, issue #15) renders with the exact same visual
+ * language as this inbox's own cards instead of a parallel, differently
+ * styled one.
+ */
+export function ExtensionUiCard({
+  icon: RequestIcon,
+  title,
+  badgeLabel,
+  description,
+  children,
+}: ExtensionUiCardProps) {
   return (
     <Card size="sm" className="ring-primary/30">
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5">
-          <Icon />
-          {request.title}
+          <RequestIcon />
+          {title}
         </CardTitle>
         <CardAction>
-          <Badge variant="outline">{METHOD_LABEL[request.method]}</Badge>
+          <Badge variant="outline">{badgeLabel}</Badge>
         </CardAction>
-        {request.method === "confirm" && <CardDescription>{request.message}</CardDescription>}
+        {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
-      <CardContent>
-        {request.method === "confirm" ? (
-          <ConfirmControls onAnswer={onAnswer} />
-        ) : request.method === "select" ? (
-          <SelectControls request={request} onAnswer={onAnswer} />
-        ) : request.method === "input" ? (
-          <InputControls request={request} onAnswer={onAnswer} />
-        ) : (
-          <EditorControls request={request} onAnswer={onAnswer} />
-        )}
-      </CardContent>
+      <CardContent>{children}</CardContent>
     </Card>
+  );
+}
+
+function ApprovalCard({ request, onAnswer }: ApprovalCardProps) {
+  return (
+    <ExtensionUiCard
+      icon={METHOD_ICON[request.method]}
+      title={request.title}
+      badgeLabel={METHOD_LABEL[request.method]}
+      description={request.method === "confirm" ? request.message : undefined}
+    >
+      {request.method === "confirm" ? (
+        <ConfirmControls onAnswer={onAnswer} />
+      ) : request.method === "select" ? (
+        <SelectControls request={request} onAnswer={onAnswer} />
+      ) : request.method === "input" ? (
+        <InputControls request={request} onAnswer={onAnswer} />
+      ) : (
+        <EditorControls request={request} onAnswer={onAnswer} />
+      )}
+    </ExtensionUiCard>
   );
 }
 
