@@ -27,6 +27,16 @@ export type {
 export { createSessionsStore } from "./session/sessions-store";
 export type { SessionsStore, SessionStatus, SessionSummary } from "./session/sessions-store";
 
+export { createSteeringController } from "./session/steering";
+export type {
+  QueueDrainMode,
+  QueueModes,
+  SteeringController,
+  SteeringInterruptMode,
+  SteeringPending,
+  SteeringSnapshot,
+} from "./session/steering";
+
 export type {
   OmpStartInfo,
   OmpBinarySource,
