@@ -195,8 +195,14 @@ function findCookieValue(cookies: unknown[], name: string): string | undefined {
  * the first page target — the same `Target.setDiscoverTargets` ->
  * `Target.attachToTarget` sequence `run_cdp_pump` drives. */
 async function attachToFirstPage(cdp: CdpClient): Promise<string> {
+  // Subscribe before sending: `setDiscoverTargets` replays every existing
+  // target as `Target.targetCreated` *before* its own command response, so
+  // awaiting the ack first drops the replay on the floor and times out.
+  // (`run_cdp_pump` is immune: it reads the same socket in one ordered
+  // loop, so replay-before-ack ordering cannot skip past it.)
+  const targetCreated = cdp.waitForEvent("Target.targetCreated", isPageTarget);
   await cdp.send("Target.setDiscoverTargets", { discover: true });
-  const params = await cdp.waitForEvent("Target.targetCreated", isPageTarget);
+  const params = await targetCreated;
   const result = await cdp.send("Target.attachToTarget", {
     targetId: targetIdOf(params),
     flatten: true,
