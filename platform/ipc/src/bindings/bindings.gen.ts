@@ -26,6 +26,26 @@ export const commands = {
 	 *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
 	 */
 	browserStop: (projectPath: string) => typedError<null, BrowserError>(__TAURI_INVOKE("browser_stop", { projectPath })),
+	/**
+	 *  Toggle a session's browser between the app-owned connected Chromium (T9,
+	 *  ADR-0006) and omp's `relay` kind. Enabling stands up the relay server the
+	 *  browser-relay extension connects to (adopting one already running rather
+	 *  than binding a second) and persists `browser.relay` — which omp's own
+	 *  settings resolution checks *before* `browser.cdpUrl`
+	 *  (`config/settings-schema.ts:4509-4519`: "Takes precedence over Browser
+	 *  CDP URL") — so new omp sessions default to it. Disabling is the mirror
+	 *  image: once no session wants relay, the persisted setting is reset and,
+	 *  if this app spawned the daemon, it is torn down (`RelayDaemon::drop`).
+	 *
+	 *  omp has no RPC command for mutating a *running* session's settings (see
+	 *  `set_relay_config`'s doc comment), so a session already streaming when
+	 *  this is called keeps whatever kind it resolved at its own startup — the
+	 *  same, already-accepted gap T9's `connected` CDP URL has today (this
+	 *  file's own doc: "this module never talks to omp about it"). `sessionId`
+	 *  is accepted now so every call site is ready the moment that wiring
+	 *  lands.
+	 */
+	browserSetRelay: (sessionId: string, enabled: boolean) => typedError<RelayInfo, BrowserError>(__TAURI_INVOKE("browser_set_relay", { sessionId, enabled })),
 };
 
 /** Events */
@@ -39,7 +59,7 @@ export const events = {
 export type BridgeError = { type: "binaryNotFound"; message: string } | { type: "spawnFailed"; message: string } | { type: "writeFailed"; message: string } | { type: "killFailed"; message: string } | { type: "unknownSession" };
 
 /**  Errors returned from Browser Pane Shell Bridge commands. */
-export type BrowserError = { type: "chromiumNotFound"; message: string } | { type: "profileDirFailed"; message: string } | { type: "spawnFailed"; message: string } | { type: "launchTimeout"; message: string } | { type: "attachFailed"; message: string } | { type: "frameServerFailed"; message: string } | { type: "unknownProject" };
+export type BrowserError = { type: "chromiumNotFound"; message: string } | { type: "profileDirFailed"; message: string } | { type: "spawnFailed"; message: string } | { type: "launchTimeout"; message: string } | { type: "attachFailed"; message: string } | { type: "frameServerFailed"; message: string } | { type: "unknownProject" } | { type: "relayLaunchFailed"; message: string } | { type: "relayConfigFailed"; message: string };
 
 /**
  *  Info the frontend needs to render the pane and (later) hand omp's browser
@@ -90,6 +110,29 @@ export type OmpStartInfo = {
 	version: string,
 	path: string,
 	source: OmpBinarySource,
+};
+
+/**
+ *  Info the frontend needs to reflect the Relay toggle's state — the
+ *  `sessionId`-scoped mirror of `BrowserInfo` for the T9 app-owned
+ *  Chromium. `cdpUrl`/`extensionEndpoint` are `null` once disabled.
+ */
+export type RelayInfo = {
+	sessionId: string,
+	enabled: boolean,
+	/**
+	 *  `http://127.0.0.1:9224` while enabled — the same HTTP CDP-discovery
+	 *  form omp's `connected`/`relay` kinds require (mirrors
+	 *  `BrowserInfo.cdpUrl`; `relay/kind.ts`'s `DEFAULT_RELAY_URL`).
+	 */
+	cdpUrl: string | null,
+	/**  `ws://127.0.0.1:9224/ext` — what the browser-relay Chrome extension dials into (`relay/protocol.ts`). */
+	extensionEndpoint: string | null,
+	/**
+	 *  True once the extension has completed its handshake: the relay's
+	 *  `GET /json/version` answers `200` rather than `503` (`relay/server.ts`).
+	 */
+	extensionConnected: boolean,
 };
 
 /* Tauri Specta runtime */

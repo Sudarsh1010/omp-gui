@@ -32,9 +32,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 
 interface CdpMessage {
@@ -380,5 +382,154 @@ async function stopChrome(child: ChildProcessWithoutNullStreams): Promise<void> 
         rmSync(userDataDir, { recursive: true, force: true });
       }
     }, 30_000);
+  },
+);
+
+/**
+ * Relay daemon seam (T11, issue #12, ADR-0006 §"Human-in-the-loop", notes/
+ * browser.md §6): proves the exact contract `browser_set_relay`
+ * (`crates/shell/src/browser.rs`) depends on against the *real* pinned omp
+ * binary's `browser-relay serve` subcommand, never mocking the CDP-
+ * discovery HTTP protocol it speaks. Unlike the suite above, this needs no
+ * Chrome, no extension, and no `xvfb-run`: `relay/server.ts`'s
+ * `/json/version` legitimately answers 503 before any extension has ever
+ * attached, so the daemon's own up/down lifecycle and HTTP surface are
+ * fully exercisable headless.
+ *
+ * The browser-relay Chrome extension's actual handshake (`chrome.debugger`
+ * attach, tab discovery, driving the user's real tabs) is deliberately not
+ * exercised here, for the same reason BrowserPane's Takeover input isn't in
+ * the suite above: it requires a human's real, already-logged-in Chrome
+ * profile with the extension loaded via "Load unpacked" — verified by
+ * running the app, not CI automation (spec Testing Decisions §2).
+ *
+ * Omp resolution mirrors `crates/shell/src/omp.rs`'s `resolve_omp_path`
+ * (env override, then the repo-local dev binary `fetch-omp.mjs`
+ * downloads; the bundled-resource-dir branch has no equivalent outside a
+ * built Tauri app). No pinned omp binary resolvable → the suite skips
+ * rather than fails, mirroring `resolveChromeExecutable`'s precedent above.
+ */
+function resolveOmpBinary(): string | null {
+  const override = process.env.OMP_GUI_OMP_PATH;
+  if (override && existsSync(override)) return override;
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const dev = join(repoRoot, "crates", "shell", "binaries", "omp");
+  return existsSync(dev) ? dev : null;
+}
+
+/** Binds an ephemeral loopback port and releases it immediately, so each
+ * test drives its own private relay rather than the shared default port
+ * `9224` a real omp install (or this very app) might already be serving. */
+async function findFreePort(): Promise<number> {
+  const { promise, resolve, reject } = Promise.withResolvers<number>();
+  const server = createServer();
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", () => {
+    const address = server.address();
+    server.close(() => {
+      if (address && typeof address === "object") resolve(address.port);
+      else reject(new Error("failed to allocate a free port"));
+    });
+  });
+  return promise;
+}
+
+/** Mirrors `spawn_relay_daemon`'s wait in `crates/shell/src/browser.rs`:
+ * the exact ready banner `runServe` prints (`cli/browser-relay-cli.ts`).
+ *
+ * `setTimeout` here is a failure-mode bound on a real `omp browser-relay`
+ * child process's stdout, exactly like `waitForDevToolsUrl` above for
+ * Chrome (see this file's header) — not a "sleep then assert": the actual
+ * wait is the `rl.on("line", ...)` listener, and fake timers have no
+ * effect on the external subprocess actually producing that line, so
+ * there is no deterministic substitute (ts-no-test-timers' documented
+ * exception). */
+function waitForRelayBanner(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMs: number,
+): Promise<void> {
+  const { promise, resolve, reject } = Promise.withResolvers<void>();
+  const rl = createInterface({ input: child.stdout });
+  const timer = setTimeout(() => {
+    rl.close();
+    reject(new Error("timed out waiting for omp browser-relay's ready banner"));
+  }, timeoutMs);
+  rl.on("line", (line) => {
+    if (line.includes("browser relay listening on http://")) {
+      clearTimeout(timer);
+      rl.close();
+      resolve();
+    }
+  });
+  child.once("error", (err) => {
+    clearTimeout(timer);
+    rl.close();
+    reject(err);
+  });
+  return promise;
+}
+
+async function stopRelay(child: ChildProcessWithoutNullStreams): Promise<void> {
+  child.kill();
+  await once(child, "exit");
+}
+
+const ompPath = resolveOmpBinary();
+
+(ompPath ? describe : describe.skip)(
+  "browser relay daemon seam (real omp browser-relay binary)",
+  () => {
+    it("serves the CDP-discovery HTTP contract before any extension attaches", async () => {
+      const port = await findFreePort();
+      const child = spawn(ompPath!, ["browser-relay", "--port", String(port)], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      child.stderr.resume(); // drained but unused, mirrors `launchChrome`'s stdout note above
+      try {
+        await waitForRelayBanner(child, 15_000);
+
+        // `probe_relay_status`'s entire contract: *any* HTTP response means
+        // "adopt, don't bind a second one" — 503 is that response before an
+        // extension has ever dialed in (`relay/server.ts`'s handler).
+        const status = await fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.status);
+        expect(status).toBe(503);
+
+        // `/json` (page-target listing) answers even pre-handshake.
+        const targets: unknown = await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json());
+        expect(Array.isArray(targets)).toBe(true);
+      } finally {
+        await stopRelay(child);
+      }
+    }, 20_000);
+
+    it("loses a same-port race cleanly — the exact signal ensure_relay_daemon's adopt fallback depends on", async () => {
+      const port = await findFreePort();
+      const first = spawn(ompPath!, ["browser-relay", "--port", String(port)], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      first.stderr.resume();
+      try {
+        await waitForRelayBanner(first, 15_000);
+
+        // A second `browser-relay` on the same port must lose the bind and
+        // exit 0 without ever printing the ready banner (`runServe`'s
+        // EADDRINUSE path: "already running ... nothing to do") — the
+        // signal `spawn_relay_daemon` reads as "someone else won; go adopt
+        // them" rather than a real launch failure.
+        const second = spawn(ompPath!, ["browser-relay", "--port", String(port)], {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        second.stdout.resume();
+        second.stderr.resume();
+        const [code] = await once(second, "exit");
+        expect(code).toBe(0);
+
+        // The winner is still the one actually serving.
+        const status = await fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.status);
+        expect(status).toBe(503);
+      } finally {
+        await stopRelay(first);
+      }
+    }, 20_000);
   },
 );

@@ -25,7 +25,8 @@ use serde_json::{Value, json};
 use specta::Type;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{SocketAddr, TcpStream as SyncTcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -81,6 +82,8 @@ pub enum BrowserError {
     AttachFailed { message: String },
     FrameServerFailed { message: String },
     UnknownProject,
+    RelayLaunchFailed { message: String },
+    RelayConfigFailed { message: String },
 }
 
 impl fmt::Display for BrowserError {
@@ -93,6 +96,8 @@ impl fmt::Display for BrowserError {
             Self::AttachFailed { message } => write!(f, "CDP attach failed: {message}"),
             Self::FrameServerFailed { message } => write!(f, "frame server failed: {message}"),
             Self::UnknownProject => write!(f, "unknown project"),
+            Self::RelayLaunchFailed { message } => write!(f, "browser relay launch failed: {message}"),
+            Self::RelayConfigFailed { message } => write!(f, "browser relay config failed: {message}"),
         }
     }
 }
@@ -143,6 +148,9 @@ pub struct BrowserState {
     /// managing its own OS threads explicitly (see `omp.rs`'s stdout pumps).
     runtime: tokio::runtime::Runtime,
     sessions: Mutex<HashMap<String, BrowserSession>>,
+    /// Relay daemons (T11), keyed by port — see the "Relay mode" section
+    /// near the end of this file.
+    relay: Mutex<HashMap<u16, RelayDaemon>>,
 }
 
 impl Default for BrowserState {
@@ -154,6 +162,7 @@ impl Default for BrowserState {
                 .build()
                 .expect("failed to start the browser pane's async runtime"),
             sessions: Mutex::new(HashMap::new()),
+            relay: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -663,4 +672,363 @@ async fn serve_frame_client(stream: TcpStream, mut frames: broadcast::Receiver<B
             }
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Relay mode (T11, issue #12, ADR-0006 §"Human-in-the-loop", notes/
+// browser.md §6): the per-task toggle that drives the user's own, already-
+// logged-in Chrome through omp's `relay` browser kind instead of the
+// app-owned Chromium above, for SSO/hardware-key/password-manager/payment
+// flows synthesized input mishandles.
+//
+// `relay/server.ts` impersonates Chrome's own CDP discovery endpoint, so
+// omp's ordinary `connected`/`relay`-kind `puppeteer.connect({ browserURL
+// })` path (notes/browser.md §2) works against it unchanged; the piece this
+// module actually owns is standing that server up (a plain `omp
+// browser-relay` subprocess — the same CLI surface a user could run by
+// hand) and, per `set_relay_config`'s doc comment, the persisted config
+// that makes an omp session pick relay mode at all.
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Default port of the `omp browser-relay` endpoint — kept in sync with
+/// `DEFAULT_RELAY_PORT` (`commands/browser-relay.ts`) / `DEFAULT_RELAY_URL`
+/// (`tools/browser/relay/kind.ts`). Not user-configurable in v1: every
+/// session shares one relay daemon, matching omp's own machine-global-
+/// singleton design for it (`relay/daemon.ts`'s file doc).
+const DEFAULT_RELAY_PORT: u16 = 9224;
+
+/// Mirrors `relay/daemon.ts`'s `PROBE_TIMEOUT_MS`.
+const RELAY_PROBE_TIMEOUT: Duration = Duration::from_millis(1_500);
+
+/// Mirrors `relay/daemon.ts`'s `READY_TIMEOUT_MS` for the *daemon's own*
+/// startup — separate from, and much shorter than, the up-to-35s an omp
+/// session waits for the browser-relay *extension* to complete its
+/// handshake once the server is already up (`registry.ts`'s
+/// `RELAY_EXTENSION_WAIT_MS`, notes/browser.md §6). This module only needs
+/// to know the server bound its port, not that a human's browser has
+/// attached yet.
+const RELAY_LAUNCH_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Info the frontend needs to reflect the Relay toggle's state — the
+/// `sessionId`-scoped mirror of `BrowserInfo` for the T9 app-owned
+/// Chromium. `cdpUrl`/`extensionEndpoint` are `null` once disabled.
+#[derive(Serialize, Clone, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayInfo {
+    pub session_id: String,
+    pub enabled: bool,
+    /// `http://127.0.0.1:9224` while enabled — the same HTTP CDP-discovery
+    /// form omp's `connected`/`relay` kinds require (mirrors
+    /// `BrowserInfo::cdp_url`; `relay/kind.ts`'s `DEFAULT_RELAY_URL`).
+    pub cdp_url: Option<String>,
+    /// `ws://127.0.0.1:9224/ext` — what the browser-relay Chrome extension
+    /// dials into (`relay/protocol.ts`).
+    pub extension_endpoint: Option<String>,
+    /// True once the extension has completed its handshake: the relay's
+    /// `GET /json/version` answers `200` rather than `503`
+    /// (`relay/server.ts`).
+    pub extension_connected: bool,
+}
+
+/// One relay daemon per port: the `browser-relay` server the extension
+/// dials into (`relay/server.ts`). Machine-global by omp's own design — any
+/// project's omp session, or a user running `omp browser-relay` by hand,
+/// may already own it — so membership is tracked by which `sessionId`s
+/// currently want relay mode on, making a duplicate enable for an
+/// already-counted session, or a disable for one that never enabled, a safe
+/// no-op rather than a double-count or underflow.
+#[derive(Default)]
+struct RelayDaemon {
+    /// `Some` only when this struct spawned (and therefore owns the
+    /// lifecycle of) the child process; adopted external/omp-lazy-started
+    /// daemons are never touched (notes/browser.md §2: "connected and relay
+    /// browsers belong to the user: drop our CDP link, never kill").
+    child: Option<Child>,
+    sessions: HashSet<String>,
+}
+
+impl Drop for RelayDaemon {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+/// Toggle a session's browser between the app-owned connected Chromium (T9,
+/// ADR-0006) and omp's `relay` kind. Enabling stands up the relay server the
+/// browser-relay extension connects to (adopting one already running rather
+/// than binding a second) and persists `browser.relay` — which omp's own
+/// settings resolution checks *before* `browser.cdpUrl`
+/// (`config/settings-schema.ts:4509-4519`: "Takes precedence over Browser
+/// CDP URL") — so new omp sessions default to it. Disabling is the mirror
+/// image: once no session wants relay, the persisted setting is reset and,
+/// if this app spawned the daemon, it is torn down (`RelayDaemon::drop`).
+///
+/// omp has no RPC command for mutating a *running* session's settings (see
+/// `set_relay_config`'s doc comment), so a session already streaming when
+/// this is called keeps whatever kind it resolved at its own startup — the
+/// same, already-accepted gap T9's `connected` CDP URL has today (this
+/// file's own doc: "this module never talks to omp about it"). `sessionId`
+/// is accepted now so every call site is ready the moment that wiring
+/// lands.
+#[tauri::command]
+#[specta::specta]
+pub fn browser_set_relay(
+    app: AppHandle,
+    state: State<'_, BrowserState>,
+    session_id: String,
+    enabled: bool,
+) -> Result<RelayInfo, BrowserError> {
+    if !enabled {
+        return disable_relay(&app, &state, &session_id);
+    }
+
+    {
+        let mut relay = state.relay.lock();
+        if let Some(daemon) = relay.get_mut(&DEFAULT_RELAY_PORT) {
+            if !daemon.sessions.is_empty() {
+                daemon.sessions.insert(session_id.clone());
+                let status = probe_relay_status(DEFAULT_RELAY_PORT, RELAY_PROBE_TIMEOUT);
+                return Ok(relay_info(session_id, status));
+            }
+        }
+    }
+
+    // First session (of possibly several) to ask for relay: bring the
+    // daemon up and flip the persisted config outside the lock — mirrors
+    // `browser_launch` spawning Chromium before taking `state.sessions`.
+    let (omp_path, _source) =
+        crate::omp::resolve_omp_path(&app).map_err(|e| BrowserError::RelayLaunchFailed {
+            message: e.to_string(),
+        })?;
+    let child = ensure_relay_daemon(&omp_path, DEFAULT_RELAY_PORT)?;
+    set_relay_config(&omp_path, &app, true)?;
+
+    let mut relay = state.relay.lock();
+    let daemon = relay.entry(DEFAULT_RELAY_PORT).or_default();
+    if daemon.sessions.is_empty() {
+        daemon.child = child;
+    } else if child.is_some() {
+        // Lost a race with a concurrent enable for a different session that
+        // already finished (`daemon.sessions` is non-empty): drop our
+        // now-redundant daemon rather than leaking a second relay process.
+        drop(RelayDaemon {
+            child,
+            sessions: HashSet::new(),
+        });
+    }
+    daemon.sessions.insert(session_id.clone());
+
+    let status = probe_relay_status(DEFAULT_RELAY_PORT, RELAY_PROBE_TIMEOUT);
+    Ok(relay_info(session_id, status))
+}
+
+fn relay_info(session_id: String, status: Option<u16>) -> RelayInfo {
+    RelayInfo {
+        session_id,
+        enabled: true,
+        cdp_url: Some(format!("http://127.0.0.1:{DEFAULT_RELAY_PORT}")),
+        extension_endpoint: Some(format!("ws://127.0.0.1:{DEFAULT_RELAY_PORT}/ext")),
+        extension_connected: status == Some(200),
+    }
+}
+
+fn disable_relay(
+    app: &AppHandle,
+    state: &BrowserState,
+    session_id: &str,
+) -> Result<RelayInfo, BrowserError> {
+    let now_empty = {
+        let mut relay = state.relay.lock();
+        match relay.get_mut(&DEFAULT_RELAY_PORT) {
+            Some(daemon) => {
+                daemon.sessions.remove(session_id);
+                daemon.sessions.is_empty()
+            }
+            None => false,
+        }
+    };
+    if now_empty {
+        // Drop tears down the child if we own it (`RelayDaemon::drop`); an
+        // adopted external/omp-lazy-started daemon is left running for
+        // whoever else might still be using it.
+        state.relay.lock().remove(&DEFAULT_RELAY_PORT);
+        let (omp_path, _source) =
+            crate::omp::resolve_omp_path(app).map_err(|e| BrowserError::RelayConfigFailed {
+                message: e.to_string(),
+            })?;
+        set_relay_config(&omp_path, app, false)?;
+    }
+    Ok(RelayInfo {
+        session_id: session_id.to_string(),
+        enabled: false,
+        cdp_url: None,
+        extension_endpoint: None,
+        extension_connected: false,
+    })
+}
+
+/// Ensure a relay daemon answers at `port`, adopting one that is already
+/// serving — manually started, left behind by a previous toggle, or lazily
+/// started by an omp session's own `ensureRelayDaemon` — rather than
+/// fighting it for the bind (`relay/daemon.ts`'s own philosophy: "a
+/// manually started relay may already own the port ... adopt that external
+/// server without attempting another bind"). Returns `Some(child)` only
+/// when this call's own spawn is the process now bound to `port`; `None`
+/// for every adopted case, so the caller never kills a daemon another
+/// consumer still needs.
+fn ensure_relay_daemon(omp_path: &Path, port: u16) -> Result<Option<Child>, BrowserError> {
+    if probe_relay_status(port, RELAY_PROBE_TIMEOUT).is_some() {
+        return Ok(None);
+    }
+    match spawn_relay_daemon(omp_path, port) {
+        Ok(child) => Ok(Some(child)),
+        Err(launch_err) => {
+            // Lost a bind race (ours or a manual `omp browser-relay`)
+            // between the probe above and our own spawn attempt; adopt
+            // whichever process won rather than failing a toggle that,
+            // from the user's perspective, should just work now.
+            if probe_relay_status(port, RELAY_PROBE_TIMEOUT).is_some() {
+                Ok(None)
+            } else {
+                Err(launch_err)
+            }
+        }
+    }
+}
+
+/// Spawns `omp browser-relay --port <port>` and waits for its ready banner
+/// (`cli/browser-relay-cli.ts`'s `runServe`: `"omp browser relay listening
+/// on http://…"`, matching `relay/daemon.ts`'s own `READY_LOG_PATTERN`). A
+/// losing EADDRINUSE race prints "already running; nothing to do" and exits
+/// 0 *without* that banner — indistinguishable here from any other early
+/// exit, which is fine: either way the caller re-probes and adopts.
+fn spawn_relay_daemon(omp_path: &Path, port: u16) -> Result<Child, BrowserError> {
+    let mut child = Command::new(omp_path)
+        .args(["browser-relay", "--port", &port.to_string()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| BrowserError::RelayLaunchFailed {
+            message: format!("failed to spawn {} browser-relay: {e}", omp_path.display()),
+        })?;
+
+    let stdout = child.stdout.take().expect("stdout piped");
+    let stderr = child.stderr.take().expect("stderr piped");
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            #[cfg(debug_assertions)]
+            eprintln!("[browser-relay stderr] {line}");
+        }
+    });
+
+    let (banner_tx, banner_rx) = std::sync::mpsc::channel::<()>();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            #[cfg(debug_assertions)]
+            eprintln!("[browser-relay stdout] {line}");
+            if line.contains("browser relay listening on http://") {
+                let _ = banner_tx.send(());
+                break;
+            }
+        }
+        // Dropping `banner_tx` here — whether or not it fired — lets
+        // `recv_timeout` observe a disconnect the instant stdout closes,
+        // rather than waiting out the full timeout on a child that has
+        // already exited.
+    });
+
+    match banner_rx.recv_timeout(RELAY_LAUNCH_TIMEOUT) {
+        Ok(()) => Ok(child),
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(BrowserError::RelayLaunchFailed {
+                message: "omp browser-relay did not report readiness in time".into(),
+            })
+        }
+    }
+}
+
+/// Bare HTTP/1.1 GET against the relay's CDP-discovery endpoint, mirroring
+/// `probeRelayServer` (`relay/daemon.ts`): any response at all — `200` once
+/// the extension has connected, `503` while still waiting for it
+/// (`relay/server.ts`'s `/json/version` handler) — means a relay is
+/// genuinely listening. `None` means nothing answered (connection refused,
+/// or no response within `timeout`), the sole signal that it is safe to
+/// attempt our own launch. No new dependency for this: a single GET against
+/// a fixed loopback path is exactly the "tiny surface, hand-rolled" seam
+/// ADR-0007 already establishes for this module's CDP traffic.
+fn probe_relay_status(port: u16, timeout: Duration) -> Option<u16> {
+    let addr: SocketAddr = format!("127.0.0.1:{port}").parse().ok()?;
+    let mut stream = SyncTcpStream::connect_timeout(&addr, timeout).ok()?;
+    stream.set_read_timeout(Some(timeout)).ok()?;
+    stream.set_write_timeout(Some(timeout)).ok()?;
+    stream
+        .write_all(
+            format!("GET /json/version HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+                .as_bytes(),
+        )
+        .ok()?;
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).ok()?;
+    String::from_utf8_lossy(&response)
+        .lines()
+        .next()?
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
+/// Flip the persisted setting that makes *new* omp sessions default to
+/// relay mode (`browser.relay`; `config/settings-schema.ts:4509-4519`).
+/// `omp config set|reset` is a short-lived CLI invocation of the same
+/// pinned binary — not the long-running `--mode rpc-ui` subprocess. There
+/// is no RPC command for mutating a running session's settings (the closed
+/// `RpcCommand` union in the pinned `modes/rpc/rpc-types.ts` runs
+/// `negotiate_protocol` through `login`; none of it touches config), so
+/// persisting through the same global config layer every session reads
+/// once at startup (`~/.omp/config.yml`, via `config/settings.ts`'s
+/// `Settings.init`) is the only externally reachable lever. A session
+/// already running when a toggle flips keeps whatever kind it resolved at
+/// its own startup: `reloadFromDisk` is only ever called before a subagent
+/// spawn or a project-directory change, never on the browser-tool path.
+/// Closing that gap — feeding a session's settings at spawn time — is
+/// session-lifecycle work belonging with `omp_start`, out of this module's
+/// scope; T9's `connected`-kind CDP URL has the identical, still-open gap.
+fn set_relay_config(omp_path: &Path, app: &AppHandle, enabled: bool) -> Result<(), BrowserError> {
+    let cwd = app
+        .path()
+        .home_dir()
+        .map_err(|e| BrowserError::RelayConfigFailed {
+            message: e.to_string(),
+        })?;
+    let mut args: Vec<&str> = vec!["config"];
+    if enabled {
+        args.extend(["set", "browser.relay", "true"]);
+    } else {
+        args.extend(["reset", "browser.relay"]);
+    }
+    let description = args.join(" ");
+    let output = Command::new(omp_path)
+        .args(&args)
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| BrowserError::RelayConfigFailed {
+            message: format!("failed to run {} {description}: {e}", omp_path.display()),
+        })?;
+    if !output.status.success() {
+        return Err(BrowserError::RelayConfigFailed {
+            message: format!(
+                "`omp {description}` exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim(),
+            ),
+        });
+    }
+    Ok(())
 }

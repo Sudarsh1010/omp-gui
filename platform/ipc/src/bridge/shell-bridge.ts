@@ -5,9 +5,10 @@ import type {
   OmpExitEvent,
   BrowserInfo,
   BrowserError,
+  RelayInfo,
 } from "../bindings/bindings.gen";
 
-export type { OmpStartInfo, OmpFrameEvent, OmpExitEvent, BrowserInfo, BrowserError };
+export type { OmpStartInfo, OmpFrameEvent, OmpExitEvent, BrowserInfo, BrowserError, RelayInfo };
 
 export interface ShellBridge {
   /** Spawn a subprocess and return its identity metadata. */
@@ -29,6 +30,14 @@ export interface ShellBridge {
   browserLaunch?(projectPath: string): Promise<BrowserInfo>;
   /** Release this caller's interest in the project's Browser Pane. */
   browserStop?(projectPath: string): Promise<void>;
+  /**
+   * Toggle a session's browser between the app-owned connected Chromium
+   * (T9, ADR-0006) and omp's `relay` kind, which drives the user's own,
+   * already-logged-in Chrome through the browser-relay extension
+   * (ADR-0006 §"Human-in-the-loop", issue #12). Optional for the same
+   * reason `browserLaunch`/`browserStop` are.
+   */
+  browserSetRelay?(sessionId: string, enabled: boolean): Promise<RelayInfo>;
 }
 
 /**
@@ -37,7 +46,7 @@ export interface ShellBridge {
  * launching its own Chrome for Testing.
  */
 export type BrowserShellBridge = ShellBridge &
-  Required<Pick<ShellBridge, "browserLaunch" | "browserStop">>;
+  Required<Pick<ShellBridge, "browserLaunch" | "browserStop" | "browserSetRelay">>;
 
 export class BridgeCommandError<E = BridgeError> extends Error {
   constructor(readonly error: E) {

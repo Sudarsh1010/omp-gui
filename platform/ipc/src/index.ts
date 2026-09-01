@@ -29,4 +29,5 @@ export type {
   OmpExitEvent,
   BrowserInfo,
   BrowserError,
+  RelayInfo,
 } from "./bindings/bindings.gen";
