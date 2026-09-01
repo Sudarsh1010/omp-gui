@@ -7,6 +7,20 @@ export type { ShellBridge } from "./bridge/shell-bridge";
 
 export * from "./session/session";
 
+export { Transcript } from "./session/transcript";
+export type {
+  TranscriptEntry,
+  TranscriptSnapshot,
+  UserMessageEntry,
+  AssistantMessageEntry,
+  ThinkingEntry,
+  ToolExecutionEntry,
+  ToolExecutionStatus,
+  NoticeEntry,
+  NoticeLevel,
+  TranscriptImage,
+} from "./session/transcript";
+
 export type {
   OmpStartInfo,
   OmpBinarySource,
