@@ -86,4 +86,9 @@ export type {
   SubagentNoticeEntry,
 } from "./session/subagents";
 export { createLoginController, EMPTY_LOGIN_SNAPSHOT } from "./session/login";
-export type { LoginController, LoginProvider, LoginSnapshot, OAuthUrlElicitation } from "./session/login";
+export type {
+  LoginController,
+  LoginProvider,
+  LoginSnapshot,
+  OAuthUrlElicitation,
+} from "./session/login";

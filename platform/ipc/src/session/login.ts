@@ -142,12 +142,20 @@ function asCancelTargetId(frame: RpcEventFrame): string | undefined {
 function asLoginOutcome(
   frame: RpcEventFrame,
 ): { success: boolean; error: string | undefined } | undefined {
-  if (frame.type !== "response" || frame.command !== "login" || typeof frame.success !== "boolean") {
+  if (
+    frame.type !== "response" ||
+    frame.command !== "login" ||
+    typeof frame.success !== "boolean"
+  ) {
     return undefined;
   }
   return {
     success: frame.success,
-    error: frame.success ? undefined : typeof frame.error === "string" ? frame.error : "Login failed",
+    error: frame.success
+      ? undefined
+      : typeof frame.error === "string"
+        ? frame.error
+        : "Login failed",
   };
 }
 
@@ -226,7 +234,8 @@ export function createLoginController(session: RpcSession): LoginController {
         await session.command({ type: "login", providerId });
         finishLogin(providerId, true, undefined);
       } catch (error) {
-        if (error instanceof Error && error.message === "timed out waiting for response to login") return;
+        if (error instanceof Error && error.message === "timed out waiting for response to login")
+          return;
         finishLogin(providerId, false, error instanceof Error ? error.message : String(error));
         throw error;
       }

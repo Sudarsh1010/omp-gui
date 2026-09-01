@@ -23,7 +23,10 @@ export function useLogin(store: SessionsStore, sessionId: string): UseLoginResul
   const getSessionSnapshot = useCallback(() => store.getSession(sessionId), [store, sessionId]);
   const session = useSyncExternalStore(store.subscribe, getSessionSnapshot);
 
-  const controller = useMemo(() => (session ? createLoginController(session) : undefined), [session]);
+  const controller = useMemo(
+    () => (session ? createLoginController(session) : undefined),
+    [session],
+  );
   useEffect(() => controller?.dispose, [controller]);
 
   const subscribe = useCallback(

@@ -57,8 +57,16 @@ export interface LoginPanelProps {
  */
 export function LoginPanel({ store, sessionId }: LoginPanelProps) {
   const [open, setOpen] = useState(false);
-  const { providers, pendingProviderId, elicitation, loading, error, login, refreshProviders, dismissElicitation } =
-    useLogin(store, sessionId);
+  const {
+    providers,
+    pendingProviderId,
+    elicitation,
+    loading,
+    error,
+    login,
+    refreshProviders,
+    dismissElicitation,
+  } = useLogin(store, sessionId);
 
   // Auto-open the sign-in page as soon as a new elicitation arrives,
   // regardless of whether this popover happens to be open — `id` dedupes
@@ -107,7 +115,10 @@ export function LoginPanel({ store, sessionId }: LoginPanelProps) {
             description={elicitation.instructions}
           >
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => void openUrl(elicitation.launchUrl ?? elicitation.url)}>
+              <Button
+                size="sm"
+                onClick={() => void openUrl(elicitation.launchUrl ?? elicitation.url)}
+              >
                 <ArrowSquareOutIcon />
                 Open sign-in page
               </Button>
