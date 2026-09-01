@@ -7,9 +7,12 @@
  * smoke-driving the real app, not by test automation (per the spec).
  *
  * This covers what T9 delivers: attaching as a second CDP client, screencast
- * frames arriving, and the persistent profile surviving a relaunch. Input
- * dispatch (Takeover) is a later ticket and is deliberately not exercised
- * here.
+ * frames arriving, and the persistent profile surviving a relaunch — plus
+ * what T10 adds: Takeover's `Input.dispatchMouseEvent`/`dispatchKeyEvent`
+ * calls actually landing on the page (a dispatched click and dispatched
+ * typed text, read back via `Runtime.evaluate` DOM state) — the same CDP
+ * seam `crates/shell/src/browser.rs`'s `run_cdp_pump` depends on to dispatch
+ * pane input.
  *
  * Chrome resolution mirrors `crates/shell/src/browser.rs`'s
  * `resolve_chromium_executable` (env override, then the standard
@@ -63,6 +66,13 @@ function asObject(value: unknown, context: string): Record<string, unknown> {
 function asArray(value: unknown, context: string): unknown[] {
   if (!Array.isArray(value)) {
     throw new Error(`expected ${context} to be an array, got ${typeof value}`);
+  }
+  return value;
+}
+
+function asNumber(value: unknown, context: string): number {
+  if (typeof value !== "number") {
+    throw new Error(`expected ${context} to be a number, got ${typeof value}`);
   }
   return value;
 }
@@ -187,6 +197,16 @@ async function attachToFirstPage(cdp: CdpClient): Promise<string> {
   return asString(result.sessionId, "Target.attachToTarget sessionId");
 }
 
+/** Runs a `Runtime.evaluate` expression and returns its raw result value —
+ * the read-back half of the Takeover seam test below, since asserting
+ * dispatched input "landed" means reading DOM state back through CDP, not
+ * through the page's own JS return value of the dispatch call (there isn't
+ * one: `Input.dispatch*` is fire-and-forget from the caller's side). */
+async function evaluate(cdp: CdpClient, sessionId: string, expression: string): Promise<unknown> {
+  const response = await cdp.send("Runtime.evaluate", { expression }, sessionId);
+  return asObject(response.result, "Runtime.evaluate result").value;
+}
+
 /** Mirrors `chrome_for_testing_relative_path` in `crates/shell/src/browser.rs`. */
 function chromeForTestingRelativePath(): string {
   if (process.platform === "darwin") {
@@ -286,7 +306,7 @@ async function stopChrome(child: ChildProcessWithoutNullStreams): Promise<void> 
 }
 
 (chromePath ? describe : describe.skip)(
-  "browser CDP seam (dual attach, screencast, profile persistence)",
+  "browser CDP seam (dual attach, screencast, profile persistence, takeover input dispatch)",
   () => {
     it("attaches as a second CDP client and receives screencast frames", async () => {
       const userDataDir = mkdtempSync(join(tmpdir(), "omp-gui-browser-test-"));
@@ -377,6 +397,108 @@ async function stopChrome(child: ChildProcessWithoutNullStreams): Promise<void> 
           }
         }
       } finally {
+        rmSync(userDataDir, { recursive: true, force: true });
+      }
+    }, 30_000);
+
+    it("lands Takeover's dispatched Input.dispatch* on the live page (click + typed text)", async () => {
+      const userDataDir = mkdtempSync(join(tmpdir(), "omp-gui-browser-test-"));
+      const { child, wsUrl } = await launchAndWait(userDataDir);
+      try {
+        const cdp = await CdpClient.connect(wsUrl);
+        try {
+          const targetSessionId = await attachToFirstPage(cdp);
+          await cdp.send("Page.enable", {}, targetSessionId);
+
+          // A `data:` URL keeps this hermetic (no real network, matching
+          // the persistence test's own precedent above) while still giving
+          // dispatched input a real button and a real text field to land on.
+          const loaded = cdp.waitForEvent("Page.loadEventFired", () => true, 15_000);
+          const html =
+            "<button id=btn onclick=\"btn.dataset.clicked='yes'\">Click</button><input id=field>";
+          await cdp.send(
+            "Page.navigate",
+            { url: `data:text/html,${encodeURIComponent(html)}` },
+            targetSessionId,
+          );
+          await loaded;
+
+          // Mirrors `BrowserPane.tsx`'s Takeover path exactly: compute a
+          // viewport point from the element's own geometry (the same job
+          // `paneCoordinates` does from the pane's frame), then drive it
+          // with `Input.dispatchMouseEvent` — never a DOM-level `.click()`
+          // shortcut, since that would prove nothing about the CDP seam
+          // Takeover actually depends on.
+          const buttonX = asNumber(
+            await evaluate(
+              cdp,
+              targetSessionId,
+              "btn.getBoundingClientRect().x + btn.getBoundingClientRect().width / 2",
+            ),
+            "button center x",
+          );
+          const buttonY = asNumber(
+            await evaluate(
+              cdp,
+              targetSessionId,
+              "btn.getBoundingClientRect().y + btn.getBoundingClientRect().height / 2",
+            ),
+            "button center y",
+          );
+          await cdp.send(
+            "Input.dispatchMouseEvent",
+            { type: "mousePressed", x: buttonX, y: buttonY, button: "left", clickCount: 1 },
+            targetSessionId,
+          );
+          await cdp.send(
+            "Input.dispatchMouseEvent",
+            { type: "mouseReleased", x: buttonX, y: buttonY, button: "left", clickCount: 1 },
+            targetSessionId,
+          );
+          expect(
+            asString(await evaluate(cdp, targetSessionId, "btn.dataset.clicked"), "btn.dataset.clicked"),
+          ).toBe("yes");
+
+          // Same seam for the keyboard half: dispatch a click to focus the
+          // field (Takeover's own click-to-focus path, see
+          // `BrowserPane.tsx`'s `onMouseDown`), then dispatch key events —
+          // never a DOM-level `.value =` shortcut.
+          const fieldX = asNumber(
+            await evaluate(
+              cdp,
+              targetSessionId,
+              "field.getBoundingClientRect().x + field.getBoundingClientRect().width / 2",
+            ),
+            "field center x",
+          );
+          const fieldY = asNumber(
+            await evaluate(
+              cdp,
+              targetSessionId,
+              "field.getBoundingClientRect().y + field.getBoundingClientRect().height / 2",
+            ),
+            "field center y",
+          );
+          await cdp.send(
+            "Input.dispatchMouseEvent",
+            { type: "mousePressed", x: fieldX, y: fieldY, button: "left", clickCount: 1 },
+            targetSessionId,
+          );
+          await cdp.send(
+            "Input.dispatchMouseEvent",
+            { type: "mouseReleased", x: fieldX, y: fieldY, button: "left", clickCount: 1 },
+            targetSessionId,
+          );
+          for (const key of "hi") {
+            await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key, text: key }, targetSessionId);
+            await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key }, targetSessionId);
+          }
+          expect(asString(await evaluate(cdp, targetSessionId, "field.value"), "field.value")).toBe("hi");
+        } finally {
+          cdp.close();
+        }
+      } finally {
+        await stopChrome(child);
         rmSync(userDataDir, { recursive: true, force: true });
       }
     }, 30_000);

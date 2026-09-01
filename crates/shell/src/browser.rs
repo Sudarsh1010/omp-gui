@@ -1,4 +1,4 @@
-//! Launch and stream the app-owned Browser Pane Chromium (ADR-0006, ADR-0007).
+//! Launch, stream, and take over the app-owned Browser Pane Chromium (ADR-0006, ADR-0007).
 //!
 //! Per project, this module owns a headed Chrome-for-Testing process with a
 //! persistent `--user-data-dir` and an ephemeral `--remote-debugging-port`.
@@ -11,6 +11,15 @@
 //! decoded JPEG frames to a tiny localhost WebSocket server. Frames never
 //! transit Tauri events (ADR-0007) — the frontend connects to that server
 //! directly.
+//!
+//! Takeover forwards pane input back through this same second CDP client —
+//! `Input.dispatchMouseEvent`/`Input.dispatchKeyEvent` calls against the
+//! most recently attached page — over the same localhost WebSocket the
+//! pane already uses for frames, made bidirectional (frames down, input
+//! up). The per-session `takeover` flag this module owns is also what the
+//! TypeScript side reads (via `BrowserInfo.takeover` and this socket's
+//! `{"type":"takeover"}` pushes) to hold back the agent's next
+//! browser-tool call while a human is driving (ADR-0006).
 //!
 //! Both the CDP pump and the frame server are "slow-moving byte-pump with a
 //! tiny surface" (ADR-0007): a handful of stable CDP methods, hand-rolled
@@ -28,10 +37,12 @@ use std::fmt;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 
 /// Power-user override, mirrors `OMP_GUI_OMP_PATH`'s naming (ADR-0004).
@@ -51,6 +62,17 @@ const FRAME_CHANNEL_CAPACITY: usize = 4;
 
 type WsStream = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>;
 
+/// Messages pushed down to every connected pane WebSocket client: JPEG
+/// screencast frames (as before) plus, new here, Takeover state changes —
+/// sent once up front on connect and again on every toggle, since the
+/// broadcast channel itself never replays history to a client that joins
+/// mid-stream.
+#[derive(Clone)]
+enum PaneMessage {
+    Frame(Bytes),
+    Takeover(bool),
+}
+
 /// Info the frontend needs to render the pane and (later) hand omp's browser
 /// tool a `connected`-kind CDP URL.
 #[derive(Serialize, Clone, Type)]
@@ -68,6 +90,9 @@ pub struct BrowserInfo {
     pub frame_endpoint: String,
     pub user_data_dir: String,
     pub chromium_path: String,
+    /// Whether a human is currently driving this pane (see
+    /// `browser_set_takeover`).
+    pub takeover: bool,
 }
 
 /// Errors returned from Browser Pane Shell Bridge commands.
@@ -112,6 +137,8 @@ struct BrowserSession {
     ref_count: usize,
     pump_task: tokio::task::AbortHandle,
     frame_server_task: tokio::task::AbortHandle,
+    takeover: Arc<AtomicBool>,
+    outbound_tx: broadcast::Sender<PaneMessage>,
 }
 
 impl BrowserSession {
@@ -123,6 +150,7 @@ impl BrowserSession {
             frame_endpoint: self.frame_endpoint.clone(),
             user_data_dir: self.user_data_dir.display().to_string(),
             chromium_path: self.chromium_path.clone(),
+            takeover: self.takeover.load(Ordering::Relaxed),
         }
     }
 }
@@ -251,14 +279,26 @@ pub fn browser_launch(
         .port();
     let frame_endpoint = format!("ws://127.0.0.1:{frame_port}");
 
-    let (frame_tx, _) = broadcast::channel::<Bytes>(FRAME_CHANNEL_CAPACITY);
+    let (outbound_tx, _) = broadcast::channel::<PaneMessage>(FRAME_CHANNEL_CAPACITY);
+    let (input_tx, input_rx) = mpsc::unbounded_channel::<(String, Value)>();
+    let takeover = Arc::new(AtomicBool::new(false));
     let frame_server_task = state
         .runtime
-        .spawn(run_frame_server(listener, frame_tx.clone()))
+        .spawn(run_frame_server(
+            listener,
+            outbound_tx.clone(),
+            input_tx,
+            takeover.clone(),
+        ))
         .abort_handle();
     let pump_task = state
         .runtime
-        .spawn(run_cdp_pump(cdp_ws_url.clone(), frame_tx))
+        .spawn(run_cdp_pump(
+            cdp_ws_url.clone(),
+            outbound_tx.clone(),
+            input_rx,
+            takeover.clone(),
+        ))
         .abort_handle();
 
     let session = BrowserSession {
@@ -271,6 +311,8 @@ pub fn browser_launch(
         ref_count: 1,
         pump_task,
         frame_server_task,
+        takeover,
+        outbound_tx,
     };
     // Re-check rather than trust the early lock-released check at the top:
     // a concurrent `browser_launch` for this same *new* project could have
@@ -312,6 +354,46 @@ pub fn browser_stop(
     if should_remove {
         sessions.remove(&key);
     }
+    Ok(())
+}
+
+/// Toggle Takeover for a project's Browser Pane. Two things change:
+///
+/// 1. Pane input forwarded over the frame WebSocket (see `parse_pane_input`)
+///    starts (or stops) being dispatched into the live Chromium via the CDP
+///    pump's `Input.dispatch*` calls (`run_cdp_pump`) — while disabled,
+///    that same input is still accepted but silently dropped rather than
+///    dispatched.
+/// 2. Every connected pane for this project — the Chromium is shared
+///    across concurrent sessions, per `BrowserSession`'s doc comment — is
+///    notified of the new state over its own WebSocket, so a "you are
+///    driving" affordance stays correct regardless of which pane flipped
+///    the toggle.
+///
+/// This module has no visibility into omp's own RPC session traffic
+/// (ADR-0007: Rust never parses rpc-ui protocol frames, it only pipes
+/// bytes), so it cannot itself hold back the agent's next browser-tool
+/// call. That half of ADR-0006's "user is driving ... suppressing agent
+/// input" is implemented on the TypeScript side, in `BrowserPane.tsx`'s
+/// `denyBrowserApprovalsWhileTakenOver`, which watches this same flag
+/// (echoed back in `BrowserInfo.takeover` and every pane
+/// `{"type":"takeover"}` push) and auto-denies the browser tool's approval
+/// prompt for any attached session while it is set.
+#[tauri::command]
+#[specta::specta]
+pub fn browser_set_takeover(
+    state: State<'_, BrowserState>,
+    project_path: String,
+    enabled: bool,
+) -> Result<(), BrowserError> {
+    let key = std::fs::canonicalize(&project_path)
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|_| BrowserError::UnknownProject)?;
+
+    let sessions = state.sessions.lock();
+    let session = sessions.get(&key).ok_or(BrowserError::UnknownProject)?;
+    session.takeover.store(enabled, Ordering::Relaxed);
+    let _ = session.outbound_tx.send(PaneMessage::Takeover(enabled));
     Ok(())
 }
 
@@ -451,14 +533,29 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 /// Runs the app's own second CDP client against the app-owned Chromium
 /// (ADR-0006): discovers page targets, attaches to each in flatten mode, and
 /// starts a screencast, rebroadcasting decoded JPEG frames to every
-/// connected pane over `frames` — never through Tauri events (ADR-0007).
+/// connected pane over `outbound` — never through Tauri events (ADR-0007).
+///
+/// The same connection carries Takeover upstream: `input_rx` delivers
+/// `(method, params)` pairs already validated by `parse_pane_input` from
+/// pane WebSocket clients, dispatched here — while `takeover` is set — as
+/// `Input.dispatchMouseEvent`/`Input.dispatchKeyEvent` calls against
+/// whichever page attached most recently (`active_session_id`). This is
+/// the one CDP connection omp's own `connected`-kind client never touches
+/// (notes/browser.md: omp's browser machinery calls no `Input.dispatch*`
+/// itself), so pane input dispatched here never races a call issued by
+/// omp's own subprocess.
 ///
 /// Best-effort by design: a single failed CDP call (an `"error"` response)
 /// is logged and dropped rather than tearing down the whole pump, since one
 /// mis-attached target should not blank out frames already flowing from
 /// others. A transport-level failure (the socket itself breaking) ends the
 /// pump — nothing further can be done over a dead connection.
-async fn run_cdp_pump(cdp_ws_url: String, frames: broadcast::Sender<Bytes>) {
+async fn run_cdp_pump(
+    cdp_ws_url: String,
+    outbound: broadcast::Sender<PaneMessage>,
+    mut input_rx: mpsc::UnboundedReceiver<(String, Value)>,
+    takeover: Arc<AtomicBool>,
+) {
     let mut ws = match tokio_tungstenite::connect_async(&cdp_ws_url).await {
         Ok((ws, _response)) => ws,
         Err(_err) => {
@@ -482,128 +579,173 @@ async fn run_cdp_pump(cdp_ws_url: String, frames: broadcast::Sender<Bytes>) {
         return;
     }
 
-    let mut pending_attach: HashSet<u64> = HashSet::new();
+    // `pending_attach` remembers which target a `Target.attachToTarget` call
+    // was for, so its response (which only carries the command id) can be
+    // turned back into a `target_id -> session_id` fact once it resolves.
+    let mut pending_attach: HashMap<u64, String> = HashMap::new();
     let mut known_targets: HashSet<String> = HashSet::new();
+    let mut target_sessions: HashMap<String, String> = HashMap::new();
+    // Takeover targets whichever page attached most recently. Screencast
+    // frames from every attached target already funnel into one undivided
+    // broadcast stream (below), so — like the pane's own view — Takeover
+    // input does not disambiguate multiple simultaneous tabs in v1 either.
+    let mut active_session_id: Option<String> = None;
 
-    while let Some(incoming) = ws.next().await {
-        let Ok(Message::Text(text)) = incoming else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<Value>(&text) else {
-            continue;
-        };
+    loop {
+        tokio::select! {
+            incoming = ws.next() => {
+                let Some(incoming) = incoming else { return };
+                let Ok(Message::Text(text)) = incoming else {
+                    continue;
+                };
+                let Ok(value) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
 
-        if let Some(id) = value.get("id").and_then(Value::as_u64) {
-            if value.get("error").is_some() {
-                #[cfg(debug_assertions)]
-                eprintln!("[browser cdp] command {id} failed: {value}");
-                continue;
+                if let Some(id) = value.get("id").and_then(Value::as_u64) {
+                    if value.get("error").is_some() {
+                        #[cfg(debug_assertions)]
+                        eprintln!("[browser cdp] command {id} failed: {value}");
+                        continue;
+                    }
+                    if let Some(target_id) = pending_attach.remove(&id) {
+                        let Some(session_id) = value.pointer("/result/sessionId").and_then(Value::as_str)
+                        else {
+                            continue;
+                        };
+                        target_sessions.insert(target_id, session_id.to_string());
+                        active_session_id = Some(session_id.to_string());
+                        next_id += 1;
+                        if send_cdp(&mut ws, next_id, "Page.enable", json!({}), Some(session_id))
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                        next_id += 1;
+                        if send_cdp(
+                            &mut ws,
+                            next_id,
+                            "Page.startScreencast",
+                            json!({
+                                "format": "jpeg",
+                                "quality": 80,
+                                "maxWidth": 1280,
+                                "maxHeight": 800,
+                                "everyNthFrame": 1,
+                            }),
+                            Some(session_id),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    continue;
+                }
+
+                match value.get("method").and_then(Value::as_str) {
+                    Some("Target.targetCreated" | "Target.targetInfoChanged") => {
+                        let is_page = value
+                            .pointer("/params/targetInfo/type")
+                            .and_then(Value::as_str)
+                            == Some("page");
+                        let Some(target_id) = value
+                            .pointer("/params/targetInfo/targetId")
+                            .and_then(Value::as_str)
+                        else {
+                            continue;
+                        };
+                        if is_page && known_targets.insert(target_id.to_string()) {
+                            next_id += 1;
+                            pending_attach.insert(next_id, target_id.to_string());
+                            if send_cdp(
+                                &mut ws,
+                                next_id,
+                                "Target.attachToTarget",
+                                json!({ "targetId": target_id, "flatten": true }),
+                                None,
+                            )
+                            .await
+                            .is_err()
+                            {
+                                return;
+                            }
+                        }
+                    }
+                    Some("Target.targetDestroyed") => {
+                        if let Some(target_id) = value.pointer("/params/targetId").and_then(Value::as_str) {
+                            known_targets.remove(target_id);
+                            if let Some(session_id) = target_sessions.remove(target_id) {
+                                if active_session_id.as_deref() == Some(session_id.as_str()) {
+                                    active_session_id = target_sessions.values().next().cloned();
+                                }
+                            }
+                        }
+                    }
+                    Some("Page.screencastFrame") => {
+                        // Two different `sessionId`s are in play here: the envelope
+                        // one (string) is the flatten-mode target session used to
+                        // route the ack; `params.sessionId` (a number) is the
+                        // per-frame id `Page.screencastFrameAck` must echo back.
+                        let Some(target_session_id) = value.get("sessionId").and_then(Value::as_str) else {
+                            continue;
+                        };
+                        let Some(params) = value.get("params") else {
+                            continue;
+                        };
+                        if let Some(data) = params.get("data").and_then(Value::as_str) {
+                            if let Ok(bytes) = BASE64_STANDARD.decode(data) {
+                                // No receivers (no pane currently open) is a normal,
+                                // silent no-op — the CDP pump keeps running so a
+                                // pane opened moments later doesn't need to re-attach.
+                                let _ = outbound.send(PaneMessage::Frame(Bytes::from(bytes)));
+                            }
+                        }
+                        if let Some(frame_ack_id) = params.get("sessionId").and_then(Value::as_u64) {
+                            next_id += 1;
+                            if send_cdp(
+                                &mut ws,
+                                next_id,
+                                "Page.screencastFrameAck",
+                                json!({ "sessionId": frame_ack_id }),
+                                Some(target_session_id),
+                            )
+                            .await
+                            .is_err()
+                            {
+                                return;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
-            if pending_attach.remove(&id) {
-                let Some(session_id) = value.pointer("/result/sessionId").and_then(Value::as_str)
-                else {
+            Some((method, params)) = input_rx.recv() => {
+                // The sole Takeover enforcement point (see `serve_frame_client`,
+                // which forwards every well-formed pane message here
+                // unconditionally): a message that arrives — or was still
+                // queued — after Takeover has been released is dropped, not
+                // dispatched. See `BrowserPane.tsx`'s
+                // `denyBrowserApprovalsWhileTakenOver` for the other half —
+                // this module cannot itself hold back the agent's own
+                // `connected`-kind CDP client (ADR-0007: no rpc-ui frame
+                // parsing in Rust).
+                if !takeover.load(Ordering::Relaxed) {
+                    continue;
+                }
+                let Some(session_id) = active_session_id.clone() else {
                     continue;
                 };
                 next_id += 1;
-                if send_cdp(&mut ws, next_id, "Page.enable", json!({}), Some(session_id))
+                if send_cdp(&mut ws, next_id, &method, params, Some(&session_id))
                     .await
                     .is_err()
                 {
                     return;
                 }
-                next_id += 1;
-                if send_cdp(
-                    &mut ws,
-                    next_id,
-                    "Page.startScreencast",
-                    json!({
-                        "format": "jpeg",
-                        "quality": 80,
-                        "maxWidth": 1280,
-                        "maxHeight": 800,
-                        "everyNthFrame": 1,
-                    }),
-                    Some(session_id),
-                )
-                .await
-                .is_err()
-                {
-                    return;
-                }
             }
-            continue;
-        }
-
-        match value.get("method").and_then(Value::as_str) {
-            Some("Target.targetCreated" | "Target.targetInfoChanged") => {
-                let is_page = value
-                    .pointer("/params/targetInfo/type")
-                    .and_then(Value::as_str)
-                    == Some("page");
-                let Some(target_id) = value
-                    .pointer("/params/targetInfo/targetId")
-                    .and_then(Value::as_str)
-                else {
-                    continue;
-                };
-                if is_page && known_targets.insert(target_id.to_string()) {
-                    next_id += 1;
-                    pending_attach.insert(next_id);
-                    if send_cdp(
-                        &mut ws,
-                        next_id,
-                        "Target.attachToTarget",
-                        json!({ "targetId": target_id, "flatten": true }),
-                        None,
-                    )
-                    .await
-                    .is_err()
-                    {
-                        return;
-                    }
-                }
-            }
-            Some("Target.targetDestroyed") => {
-                if let Some(target_id) = value.pointer("/params/targetId").and_then(Value::as_str) {
-                    known_targets.remove(target_id);
-                }
-            }
-            Some("Page.screencastFrame") => {
-                // Two different `sessionId`s are in play here: the envelope
-                // one (string) is the flatten-mode target session used to
-                // route the ack; `params.sessionId` (a number) is the
-                // per-frame id `Page.screencastFrameAck` must echo back.
-                let Some(target_session_id) = value.get("sessionId").and_then(Value::as_str) else {
-                    continue;
-                };
-                let Some(params) = value.get("params") else {
-                    continue;
-                };
-                if let Some(data) = params.get("data").and_then(Value::as_str) {
-                    if let Ok(bytes) = BASE64_STANDARD.decode(data) {
-                        // No receivers (no pane currently open) is a normal,
-                        // silent no-op — the CDP pump keeps running so a
-                        // pane opened moments later doesn't need to re-attach.
-                        let _ = frames.send(Bytes::from(bytes));
-                    }
-                }
-                if let Some(frame_ack_id) = params.get("sessionId").and_then(Value::as_u64) {
-                    next_id += 1;
-                    if send_cdp(
-                        &mut ws,
-                        next_id,
-                        "Page.screencastFrameAck",
-                        json!({ "sessionId": frame_ack_id }),
-                        Some(target_session_id),
-                    )
-                    .await
-                    .is_err()
-                    {
-                        return;
-                    }
-                }
-            }
-            _ => {}
         }
     }
 }
@@ -622,28 +764,86 @@ async fn send_cdp(
     ws.send(Message::Text(envelope.to_string().into())).await
 }
 
-/// Accepts localhost pane connections and rebroadcasts screencast frames to
-/// each of them as binary WebSocket messages — the ADR-0007 frame-serving
-/// endpoint. Never touches Tauri's event bus.
-async fn run_frame_server(listener: TcpListener, frames: broadcast::Sender<Bytes>) {
+/// Validates one inbound pane message against the small allowlist of CDP
+/// Input methods Takeover is permitted to drive. This WebSocket is
+/// unauthenticated loopback (matching the frame side it extends), so the
+/// allowlist is the only thing standing between "type into the pane" and
+/// "drive Chrome arbitrarily" — never forward a pane-supplied `method`
+/// verbatim without it.
+fn parse_pane_input(text: &str) -> Option<(String, Value)> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    let method = value.get("method")?.as_str()?;
+    if !matches!(method, "Input.dispatchMouseEvent" | "Input.dispatchKeyEvent") {
+        return None;
+    }
+    let params = value.get("params")?.clone();
+    Some((method.to_string(), params))
+}
+
+/// Accepts localhost pane connections and rebroadcasts screencast frames
+/// (and Takeover state changes) to each of them — the ADR-0007
+/// frame-serving endpoint, now bidirectional: `input_tx` carries validated
+/// Takeover input back up to `run_cdp_pump`. Never touches Tauri's event bus.
+async fn run_frame_server(
+    listener: TcpListener,
+    outbound: broadcast::Sender<PaneMessage>,
+    input_tx: mpsc::UnboundedSender<(String, Value)>,
+    takeover: Arc<AtomicBool>,
+) {
     loop {
         let Ok((stream, _addr)) = listener.accept().await else {
             continue;
         };
-        tokio::spawn(serve_frame_client(stream, frames.subscribe()));
+        tokio::spawn(serve_frame_client(
+            stream,
+            outbound.subscribe(),
+            input_tx.clone(),
+            takeover.clone(),
+        ));
     }
 }
 
-async fn serve_frame_client(stream: TcpStream, mut frames: broadcast::Receiver<Bytes>) {
+async fn serve_frame_client(
+    stream: TcpStream,
+    mut outbound: broadcast::Receiver<PaneMessage>,
+    input_tx: mpsc::UnboundedSender<(String, Value)>,
+    takeover: Arc<AtomicBool>,
+) {
     let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
         return;
     };
+    // Sync a freshly connected pane immediately: `outbound` never replays
+    // history, so a pane opened after another viewer already toggled
+    // Takeover would otherwise show stale "not driving" state until the
+    // next unrelated broadcast.
+    if ws
+        .send(Message::Text(
+            json!({ "type": "takeover", "enabled": takeover.load(Ordering::Relaxed) })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .is_err()
+    {
+        return;
+    }
     loop {
         tokio::select! {
-            frame = frames.recv() => {
-                match frame {
-                    Ok(bytes) => {
+            message = outbound.recv() => {
+                match message {
+                    Ok(PaneMessage::Frame(bytes)) => {
                         if ws.send(Message::Binary(bytes)).await.is_err() {
+                            return;
+                        }
+                    }
+                    Ok(PaneMessage::Takeover(enabled)) => {
+                        if ws
+                            .send(Message::Text(
+                                json!({ "type": "takeover", "enabled": enabled }).to_string().into(),
+                            ))
+                            .await
+                            .is_err()
+                        {
                             return;
                         }
                     }
@@ -658,6 +858,15 @@ async fn serve_frame_client(stream: TcpStream, mut frames: broadcast::Receiver<B
                 match incoming {
                     Some(Ok(Message::Close(_))) | None => return,
                     Some(Err(_)) => return,
+                    Some(Ok(Message::Text(text))) => {
+                        // Every well-formed message is forwarded
+                        // unconditionally; `run_cdp_pump` is the sole
+                        // Takeover policy enforcement point (one place to
+                        // audit "does this only dispatch while driving").
+                        if let Some((method, params)) = parse_pane_input(&text) {
+                            let _ = input_tx.send((method, params));
+                        }
+                    }
                     _ => {}
                 }
             }

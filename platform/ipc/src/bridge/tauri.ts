@@ -23,6 +23,9 @@ export function tauriBridge(): BrowserShellBridge {
     browserStop: async (projectPath) => {
       await commands.browserStop(projectPath).then(unwrap);
     },
+    browserSetTakeover: async (projectPath, enabled) => {
+      await commands.browserSetTakeover(projectPath, enabled).then(unwrap);
+    },
   };
 }
 /** Events expose listen() as Promise<unlisten>; bridge handlers need a sync unsubscribe. */

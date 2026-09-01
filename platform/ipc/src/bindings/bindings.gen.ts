@@ -26,6 +26,31 @@ export const commands = {
 	 *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
 	 */
 	browserStop: (projectPath: string) => typedError<null, BrowserError>(__TAURI_INVOKE("browser_stop", { projectPath })),
+	/**
+	 *  Toggle Takeover for a project's Browser Pane. Two things change:
+	 * 
+	 *  1. Pane input forwarded over the frame WebSocket (see `parse_pane_input`)
+	 *     starts (or stops) being dispatched into the live Chromium via the CDP
+	 *     pump's `Input.dispatch*` calls (`run_cdp_pump`) — while disabled,
+	 *     that same input is still accepted but silently dropped rather than
+	 *     dispatched.
+	 *  2. Every connected pane for this project — the Chromium is shared
+	 *     across concurrent sessions, per `BrowserSession`'s doc comment — is
+	 *     notified of the new state over its own WebSocket, so a "you are
+	 *     driving" affordance stays correct regardless of which pane flipped
+	 *     the toggle.
+	 * 
+	 *  This module has no visibility into omp's own RPC session traffic
+	 *  (ADR-0007: Rust never parses rpc-ui protocol frames, it only pipes
+	 *  bytes), so it cannot itself hold back the agent's next browser-tool
+	 *  call. That half of ADR-0006's "user is driving ... suppressing agent
+	 *  input" is implemented on the TypeScript side, in `BrowserPane.tsx`'s
+	 *  `denyBrowserApprovalsWhileTakenOver`, which watches this same flag
+	 *  (echoed back in `BrowserInfo.takeover` and every pane
+	 *  `{"type":"takeover"}` push) and auto-denies the browser tool's approval
+	 *  prompt for any attached session while it is set.
+	 */
+	browserSetTakeover: (projectPath: string, enabled: boolean) => typedError<null, BrowserError>(__TAURI_INVOKE("browser_set_takeover", { projectPath, enabled })),
 };
 
 /** Events */
@@ -62,8 +87,9 @@ export type BrowserInfo = {
 	frameEndpoint: string,
 	userDataDir: string,
 	chromiumPath: string,
+	/**  Whether a human is currently driving this pane (see `browser_set_takeover`). */
+	takeover: boolean,
 };
-
 /**  Where the omp binary was resolved from, in priority order (ADR-0004). */
 export type OmpBinarySource = 
 /**  `OMP_GUI_OMP_PATH` power-user override. */
