@@ -22,6 +22,7 @@ import {
 } from "@omp-gui/ui/components/item";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import { BrainIcon, InfoIcon, WarningIcon, WrenchIcon } from "@phosphor-icons/react";
+import { DiffView } from "./diff-view";
 
 /** Dispatches one transcript entry to its kind-specific renderer. Consumes
  * only the `@omp-gui/ipc` transcript-core types — no protocol parsing here. */
@@ -132,7 +133,7 @@ function formatPayload(value: unknown): string {
  * message/thinking entries at a glance. */
 function ToolExecutionView({ entry }: { entry: ToolExecutionEntry }) {
   const payload = entry.result ?? entry.partialResult;
-  const payloadText = !entry.diff && payload !== undefined ? formatPayload(payload) : "";
+  const payloadText = !entry.diffs && payload !== undefined ? formatPayload(payload) : "";
   return (
     <Item variant="outline" size="sm" className="flex-col items-stretch gap-2">
       <ItemHeader>
@@ -155,10 +156,8 @@ function ToolExecutionView({ entry }: { entry: ToolExecutionEntry }) {
           {formatPayload(entry.args)}
         </pre>
       )}
-      {entry.diff ? (
-        <pre className="max-h-64 overflow-auto border border-border bg-muted p-2 font-mono text-[11px]">
-          {entry.diff}
-        </pre>
+      {entry.diffs ? (
+        <DiffView diffs={entry.diffs} />
       ) : (
         payloadText && (
           <pre className="max-h-40 overflow-auto border border-border bg-muted p-2 text-[11px]">

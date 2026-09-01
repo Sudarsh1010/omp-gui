@@ -66,6 +66,32 @@ export interface ThinkingEntry {
 
 export type ToolExecutionStatus = "running" | "done" | "error" | "aborted";
 
+/**
+ * One reconstructed diff line. The wire diff format (`generateDiffString` in
+ * the pinned omp source) numbers each row `+42|content` / `-42|content` /
+ * ` 42|content` inside `@@ -a,b +c,d @@` hunks; parsing that into kind/line
+ * pairs here means the view layer colors lines without re-parsing text.
+ */
+export type DiffLineKind = "add" | "remove" | "context" | "hunk" | "other";
+
+export interface DiffLine {
+  kind: DiffLineKind;
+  /** 1-based source line number. Absent for hunk headers and unrecognized rows. */
+  lineNumber?: number;
+  content: string;
+}
+
+/** One edited file's reconstructed diff. A multi-file edit turn produces one
+ * of these per file (from `EditToolDetails.perFileResults`); a single-file
+ * edit produces exactly one (from `EditToolDetails.diff`/`.path`). */
+export interface FileDiff {
+  /** Path reported by the edit tool, when available. */
+  path?: string;
+  /** Raw unified diff text, as the wire payload carried it. */
+  raw: string;
+  lines: DiffLine[];
+}
+
 /** One tool call end-to-end, keyed by the protocol's own `toolCallId`. */
 export interface ToolExecutionEntry {
   kind: "tool";
@@ -79,13 +105,16 @@ export interface ToolExecutionEntry {
   result: unknown;
   isError?: boolean;
   /**
-   * Extracted from `result.details.diff` / `.perFileResults[i].diff`: the
-   * wire protocol has no dedicated diff event, edits ride inside the tool
-   * result payload (protocol notes §4.1). Populated once a (partial) result
-   * carries one, so the core — not the view layer — owns this protocol
-   * convention.
+   * Reconstructed from `result.details.diff` (single-file edits, alongside
+   * `.path`) or `result.details.perFileResults[i].diff` (multi-file edits,
+   * one entry per file): the wire protocol has no dedicated diff event,
+   * edits ride inside the tool result payload (protocol notes §4.1). Only
+   * the edit tool's details carry a `diff` field, so this stays `undefined`
+   * for every other tool (bash, read, write, ...) — never a fabricated
+   * diff. Populated once a (partial) result carries one, so the core — not
+   * the view layer — owns this protocol convention.
    */
-  diff?: string;
+  diffs?: FileDiff[];
   timestamp: number;
 }
 
@@ -436,7 +465,7 @@ export class Transcript {
               partialResult: undefined,
               result: undefined,
               isError: undefined,
-              diff: undefined,
+              diffs: undefined,
               timestamp: Date.now(),
             };
       switch (event.type) {
@@ -455,7 +484,7 @@ export class Transcript {
             args: event.args,
             partialResult: event.partialResult,
             status: "running",
-            diff: extractDiff(event.partialResult) ?? base.diff,
+            diffs: extractDiffs(event.partialResult) ?? base.diffs,
           };
         case "tool_execution_end":
           return {
@@ -464,7 +493,7 @@ export class Transcript {
             result: event.result,
             isError: event.isError,
             status: event.isError ? "error" : "done",
-            diff: extractDiff(event.result) ?? base.diff,
+            diffs: extractDiffs(event.result) ?? base.diffs,
           };
       }
     });
@@ -534,23 +563,61 @@ function contentText(message: UserLikeMessage): string {
 
 /**
  * Protocol notes §4.1: there is no dedicated diff event; edit tools ride
- * their diff inside `result.details.diff` (or `.perFileResults[i].diff` for
- * multi-file edits). `result`/`partialResult` are wire `any`, so this is
- * necessarily a defensive runtime shape check, not a typed access.
+ * their diff inside `result.details.diff` (single-file edits, alongside
+ * `details.path`) or `result.details.perFileResults[i].diff` (multi-file
+ * edits, one entry per file). `result`/`partialResult` are wire `any`
+ * (`EditToolDetails`/`WriteToolDetails`/... vary per tool), so this is
+ * necessarily a defensive runtime shape check, not a typed access. Every
+ * non-edit tool's details lack a `diff` field entirely, so they correctly
+ * fall through to `undefined` here — never a fabricated diff.
  */
-function extractDiff(payload: unknown): string | undefined {
+function extractDiffs(payload: unknown): FileDiff[] | undefined {
   if (typeof payload !== "object" || payload === null || !("details" in payload)) return undefined;
   const details = payload.details;
   if (typeof details !== "object" || details === null) return undefined;
-  const direct = "diff" in details ? details.diff : undefined;
-  if (typeof direct === "string" && direct.length > 0) return direct;
+
   const perFile = "perFileResults" in details ? details.perFileResults : undefined;
-  if (!Array.isArray(perFile)) return undefined;
-  const diffs: string[] = [];
-  for (const file of perFile as unknown[]) {
-    if (typeof file !== "object" || file === null || !("diff" in file)) continue;
-    const fileDiff = file.diff;
-    if (typeof fileDiff === "string" && fileDiff.length > 0) diffs.push(fileDiff);
+  if (Array.isArray(perFile) && perFile.length > 0) {
+    const diffs: FileDiff[] = [];
+    for (const file of perFile as unknown[]) {
+      if (typeof file !== "object" || file === null || !("diff" in file)) continue;
+      const raw = file.diff;
+      if (typeof raw !== "string" || raw.length === 0) continue;
+      const path = "path" in file && typeof file.path === "string" ? file.path : undefined;
+      diffs.push({ path, raw, lines: parseUnifiedDiff(raw) });
+    }
+    if (diffs.length > 0) return diffs;
   }
-  return diffs.length > 0 ? diffs.join("\n\n") : undefined;
+
+  const direct = "diff" in details ? details.diff : undefined;
+  if (typeof direct !== "string" || direct.length === 0) return undefined;
+  const path = "path" in details && typeof details.path === "string" ? details.path : undefined;
+  return [{ path, raw: direct, lines: parseUnifiedDiff(direct) }];
+}
+
+/** Matches one numbered diff row emitted by `generateDiffString` in the
+ * pinned omp source: `+42|content` / `-42|content` / ` 42|content`. */
+const NUMBERED_DIFF_ROW = /^([+\- ])(\d+)\|(.*)$/s;
+/** Matches a unified-diff hunk header, e.g. `@@ -12,3 +12,4 @@`. */
+const HUNK_HEADER_ROW = /^@@ .*@@.*$/;
+
+/** Parses the wire diff format into add/remove/context lines the UI can
+ * color directly, without re-parsing raw diff text. */
+function parseUnifiedDiff(diff: string): DiffLine[] {
+  const lines: DiffLine[] = [];
+  for (const row of diff.split("\n")) {
+    const numbered = NUMBERED_DIFF_ROW.exec(row);
+    if (numbered) {
+      const [, prefix, lineNumber, content] = numbered;
+      const kind: DiffLineKind = prefix === "+" ? "add" : prefix === "-" ? "remove" : "context";
+      lines.push({ kind, lineNumber: Number(lineNumber), content });
+      continue;
+    }
+    if (HUNK_HEADER_ROW.test(row)) {
+      lines.push({ kind: "hunk", content: row });
+      continue;
+    }
+    lines.push({ kind: "other", content: row });
+  }
+  return lines;
 }

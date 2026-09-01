@@ -19,6 +19,9 @@ export type {
   NoticeEntry,
   NoticeLevel,
   TranscriptImage,
+  DiffLine,
+  DiffLineKind,
+  FileDiff,
 } from "./session/transcript";
 
 export { createSessionsStore } from "./session/sessions-store";
