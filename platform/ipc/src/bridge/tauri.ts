@@ -1,14 +1,14 @@
-import { commands, events, type BridgeError } from "../bindings/bindings.gen";
-import { BridgeCommandError, type ShellBridge } from "./shell-bridge";
+import { commands, events } from "../bindings/bindings.gen";
+import { BridgeCommandError, type BrowserShellBridge } from "./shell-bridge";
 
-function unwrap<T>(result: { status: "ok"; data: T } | { status: "error"; error: BridgeError }): T {
+function unwrap<T, E>(result: { status: "ok"; data: T } | { status: "error"; error: E }): T {
   if (result.status === "error") {
     throw new BridgeCommandError(result.error);
   }
   return result.data;
 }
 
-export function tauriBridge(): ShellBridge {
+export function tauriBridge(): BrowserShellBridge {
   return {
     start: () => commands.ompStart().then(unwrap),
     send: async (sessionId, line) => {
@@ -19,6 +19,10 @@ export function tauriBridge(): ShellBridge {
     },
     onFrame: (handler) => subscribe(events.ompFrame, handler),
     onExit: (handler) => subscribe(events.ompExit, handler),
+    browserLaunch: (projectPath) => commands.browserLaunch(projectPath).then(unwrap),
+    browserStop: async (projectPath) => {
+      await commands.browserStop(projectPath).then(unwrap);
+    },
   };
 }
 /** Events expose listen() as Promise<unlisten>; bridge handlers need a sync unsubscribe. */
