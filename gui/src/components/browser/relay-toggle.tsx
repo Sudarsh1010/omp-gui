@@ -1,19 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { tauriBridge, type RelayInfo } from "@omp-gui/ipc";
+import { type RelayInfo } from "@omp-gui/ipc";
+import { useBridge } from "@gui/bridge-context";
 import { Switch } from "@omp-gui/ui/components/switch";
 import { Label } from "@omp-gui/ui/components/label";
 import { Badge } from "@omp-gui/ui/components/badge";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import { Alert, AlertTitle, AlertDescription } from "@omp-gui/ui/components/alert";
 import { WarningIcon } from "@phosphor-icons/react";
-
-/**
- * One `tauriBridge()` instance per mounted toggle — mirrors `BrowserPane`'s
- * own module-scoped instance (same file, same reasoning): self-contained
- * and collision-free with the app shell other wave-1/2A tickets are
- * actively reworking.
- */
-const relayBridge = tauriBridge();
 
 type ToggleStatus = "off" | "enabling" | "on" | "disabling" | "error";
 
@@ -52,6 +45,7 @@ export interface RelayToggleProps {
  * nothing to drive yet.
  */
 export function RelayToggle({ sessionId }: RelayToggleProps) {
+  const relayBridge = useBridge();
   const [status, setStatus] = useState<ToggleStatus>("off");
   const [info, setInfo] = useState<RelayInfo | null>(null);
   const [error, setError] = useState<string | null>(null);

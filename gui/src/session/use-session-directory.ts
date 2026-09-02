@@ -1,22 +1,18 @@
 /**
  * Bridges `SessionDirectory` (`@omp-gui/ipc`, T7, issue #8) into React,
- * mirroring `use-sessions.ts`'s `useSyncExternalStore` pattern. Constructs
- * its own `tauriBridge()` rather than threading one through router
- * context: the bridge is a stateless wrapper over the app-wide
- * `commands`/`events` singletons from `bindings.gen.ts` (see `tauri.ts`),
- * so a second call site here costs nothing and keeps the Past Sessions
- * feature's wiring local to this file instead of widening
- * `__root.tsx`/`main.tsx`'s shared router context for one sidebar section.
+ * mirroring `use-sessions.ts`'s `useSyncExternalStore` pattern. Reads the
+ * app's shared bridge from router context (`useBridge`) rather than
+ * constructing its own `tauriBridge` instance.
  */
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   createSessionDirectory,
-  tauriBridge,
   type SessionDirectory,
   type SessionFileEntry,
   type SessionOwnership,
   type SessionsStore,
 } from "@omp-gui/ipc";
+import { useBridge } from "@gui/bridge-context";
 
 /** The switcher's live view of past session files, plus the loading state
  * around an explicit re-scan. `directory` itself is returned too — its
@@ -29,7 +25,8 @@ export function useSessionDirectory(store: SessionsStore): {
   refreshing: boolean;
   refresh: () => Promise<void>;
 } {
-  const directory = useMemo(() => createSessionDirectory(tauriBridge(), store), [store]);
+  const bridge = useBridge();
+  const directory = useMemo(() => createSessionDirectory(bridge, store), [bridge, store]);
   useEffect(() => directory.dispose, [directory]);
   const entries = useSyncExternalStore(directory.subscribe, directory.list);
   const [refreshing, setRefreshing] = useState(false);

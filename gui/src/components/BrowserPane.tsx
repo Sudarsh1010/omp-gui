@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  tauriBridge,
   BridgeCommandError,
   type BrowserInfo,
   type ChromiumInstallEvent,
   type ChromiumInstallPhase,
   type ShellBridge,
 } from "@omp-gui/ipc";
+import { useBridge } from "@gui/bridge-context";
 import { Button } from "@omp-gui/ui/components/button";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import { Badge } from "@omp-gui/ui/components/badge";
@@ -38,15 +38,6 @@ import {
   StopIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
-
-/**
- * One `tauriBridge()` instance for every Browser Pane on screen. Constructed
- * once at module scope — mirroring `main.tsx`'s own `tauriBridge()` call —
- * rather than threaded through router context, so this component stays
- * self-contained and collision-free with the app shell (`__root.tsx`) other
- * wave-1 tickets are actively reworking.
- */
-const browserBridge = tauriBridge();
 
 type PaneStatus = "idle" | "launching" | "live" | "error";
 
@@ -269,6 +260,7 @@ function sendPaneInput(
  * calls the Rust CDP pump dispatches into the live page.
  */
 export function BrowserPane({ projectPath, attachedSessionIds = [] }: BrowserPaneProps) {
+  const browserBridge = useBridge();
   const [status, setStatus] = useState<PaneStatus>("idle");
   const [info, setInfo] = useState<BrowserInfo | null>(null);
   const [error, setError] = useState<string | null>(null);

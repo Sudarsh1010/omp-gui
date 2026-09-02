@@ -6,13 +6,14 @@ import { QueryClient } from "@tanstack/react-query";
 import { createIpcClient, createSessionsStore, tauriBridge } from "@omp-gui/ipc";
 
 const queryClient = new QueryClient();
-const ipc = createIpcClient(tauriBridge());
+const bridge = tauriBridge();
+const ipc = createIpcClient(bridge);
 const sessionsStore = createSessionsStore(ipc);
 
 const router = createRouter({
   routeTree,
   defaultStructuralSharing: true,
-  context: { queryClient, sessionsStore },
+  context: { queryClient, sessionsStore, bridge },
 });
 
 declare module "@tanstack/react-router" {
