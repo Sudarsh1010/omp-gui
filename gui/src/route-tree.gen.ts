@@ -11,6 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BrowserRouteImport } from './routes/browser'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as SettingsAppPreferencesRouteImport } from './routes/settings/app-preferences'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +25,62 @@ const BrowserRoute = BrowserRouteImport.update({
   path: '/browser',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAppPreferencesRoute = SettingsAppPreferencesRouteImport.update({
+  id: '/app-preferences',
+  path: '/app-preferences',
+  getParentRoute: () => SettingsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/browser': typeof BrowserRoute
+  '/settings': typeof SettingsRouteWithChildren
+  '/settings/app-preferences': typeof SettingsAppPreferencesRoute
+  '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/browser': typeof BrowserRoute
+  '/settings/app-preferences': typeof SettingsAppPreferencesRoute
+  '/settings': typeof SettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/browser': typeof BrowserRoute
+  '/settings': typeof SettingsRouteWithChildren
+  '/settings/app-preferences': typeof SettingsAppPreferencesRoute
+  '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/browser'
+  fullPaths:
+    '/' | '/browser' | '/settings' | '/settings/app-preferences' | '/settings/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/browser'
-  id: '__root__' | '/' | '/browser'
+  to: '/' | '/browser' | '/settings/app-preferences' | '/settings'
+  id:
+    | '__root__'
+    | '/'
+    | '/browser'
+    | '/settings'
+    | '/settings/app-preferences'
+    | '/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BrowserRoute: typeof BrowserRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +99,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrowserRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/app-preferences': {
+      id: '/settings/app-preferences'
+      path: '/app-preferences'
+      fullPath: '/settings/app-preferences'
+      preLoaderRoute: typeof SettingsAppPreferencesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
   }
 }
+
+interface SettingsRouteChildren {
+  SettingsAppPreferencesRoute: typeof SettingsAppPreferencesRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAppPreferencesRoute: SettingsAppPreferencesRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BrowserRoute: BrowserRoute,
+  SettingsRoute: SettingsRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
