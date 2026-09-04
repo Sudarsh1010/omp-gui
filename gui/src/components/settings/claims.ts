@@ -21,4 +21,12 @@ export const CLAIMED_KEYS: Record<string, ClaimedKey> = {
   modelRoles: { section: "models", label: "Models" },
   enabledModels: { section: "models", label: "Models" },
   disabledProviders: { section: "models", label: "Models" },
+  // #29: rendered by a bespoke editor inside their own schema tab
+  // (`schema-tab-section.tsx`'s `BESPOKE_EDITORS` registry), not fully
+  // excluded from that tab's row list the way `models` above is — see
+  // that file's `claimed` derivation. The Advanced pointer still uses
+  // this same entry, resolving `tab:<id>` to `/settings/<id>`.
+  "tools.approval": { section: "tab:interaction", label: "Interaction" },
+  "retry.fallbackChains": { section: "tab:model", label: "Model" },
+  "providers.maxInFlightRequests": { section: "tab:providers", label: "Providers" },
 };
