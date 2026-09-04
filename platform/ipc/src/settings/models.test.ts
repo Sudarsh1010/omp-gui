@@ -22,7 +22,6 @@ import { nodeBridge } from "../bridge/node";
 import { createSettingsController, type SettingsController } from "./settings-controller";
 import {
   createModelsCatalogController,
-  ENABLED_MODELS_EMPTY_MEANS_ALL,
   type ModelsCatalogController,
   type ModelsCatalogSnapshot,
 } from "./models-catalog";
@@ -146,9 +145,29 @@ describe("nodeBridge's modelsList against the pinned omp binary", () => {
     cwd = mkdtempSync(join(tmpdir(), "omp-gui-models-cwd-"));
     const bridge = nodeBridge(binary, cwd, { agentDir });
 
-    const catalog = await bridge.modelsList!();
-
-    expect(catalog.models).toEqual([]);
+    // Hermetic against the host/CI environment: CI's smoke job exports a
+    // real ANTHROPIC_API_KEY secret, and `nodeBridge` spawns inherit
+    // `process.env` directly, so this test must clear every credential
+    // env var omp's auth layer checks for the duration of the call
+    // (mirrors `session/smoke.test.ts`'s `LIVE_MODEL_CREDENTIAL_ENV_VARS`
+    // gate list) rather than assume none are set.
+    const credentialVars = [
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_OAUTH_TOKEN",
+      "OPENAI_API_KEY",
+      "GEMINI_API_KEY",
+    ];
+    const saved = new Map(credentialVars.map((name) => [name, process.env[name]]));
+    for (const name of credentialVars) delete process.env[name];
+    try {
+      const catalog = await bridge.modelsList!();
+      expect(catalog.models).toEqual([]);
+    } finally {
+      for (const [name, value] of saved) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   }, 30_000);
 });
 
@@ -203,9 +222,11 @@ describe("createModelsCatalogController against the pinned omp binary", () => {
     expect(anthropic).toBeDefined();
     expect(anthropic?.enabled).toBe(true);
     expect(anthropic!.models.length).toBeGreaterThan(0);
-    // ENABLED_MODELS_EMPTY_MEANS_ALL: a fresh config's enabledModels is
-    // an empty array, so every discovered model must report enabled.
-    expect(ENABLED_MODELS_EMPTY_MEANS_ALL).toBe(true);
+    // Every discovered model reports enabled from a fresh config's empty
+    // enabledModels — the real binary's empty-allow-list-means-all
+    // semantic, observed through the controller (not asserted as a
+    // hand-copied constant): `setModelEnabled` below proves the other
+    // direction (writing one selector narrows to just that one).
     for (const provider of snapshot.providers) {
       for (const model of provider.models) {
         expect(model.enabled).toBe(true);
