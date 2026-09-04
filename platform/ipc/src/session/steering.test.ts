@@ -155,6 +155,32 @@ function waitForReady(controller: SteeringController, timeoutMs = 15_000): Promi
   return promise;
 }
 
+/** Reads `steeringMode`/`followUpMode`/`interruptMode`'s own declared
+ * defaults straight from the pinned binary's `config schema --json`
+ * (a pin-bump regression risk: a new omp release can ship new queue-mode
+ * defaults) rather than hard-coding what today's pin happens to default
+ * to — this test's job is "the controller hydrates whatever the binary
+ * reports", not "the binary defaults to a specific literal". */
+async function defaultQueueModes(): Promise<{
+  steeringMode: string;
+  followUpMode: string;
+  interruptMode: string;
+}> {
+  const agentDir = mkdtempSync(join(tmpdir(), "omp-gui-steering-schema-"));
+  try {
+    const bridge = nodeBridge(binary, agentDir, { agentDir });
+    const schema = await bridge.configSchema!();
+    const byKey = new Map(schema.settings.map((s) => [s.key, s.default]));
+    return {
+      steeringMode: byKey.get("steeringMode") as string,
+      followUpMode: byKey.get("followUpMode") as string,
+      interruptMode: byKey.get("interruptMode") as string,
+    };
+  } finally {
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+}
+
 interface SteeringSession {
   handle: IpcSessionHandle;
   events: EventRecorder;
@@ -192,15 +218,12 @@ async function withSteeringSession(
 
 describe("SteeringController queue modes (no live model needed)", () => {
   it("hydrates ready + queueModes + queuedMessageCount from get_state on construction", async () => {
+    const defaults = await defaultQueueModes();
     await withSteeringSession(async ({ controller }) => {
       await waitForReady(controller);
       expect(controller.getSnapshot()).toMatchObject({
         ready: true,
-        queueModes: {
-          steeringMode: "all",
-          followUpMode: "all",
-          interruptMode: "immediate",
-        },
+        queueModes: defaults,
         queuedMessageCount: 0,
       });
     });
