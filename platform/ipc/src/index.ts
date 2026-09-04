@@ -61,10 +61,6 @@ export type {
   SessionPreview,
   SessionPreviewMessage,
   OmpBinaryInfo,
-  OmpOverrideError,
-  SmokeReport,
-  SmokeFailure,
-  SmokeStage,
 } from "./bindings/bindings.gen";
 
 export { createSessionDirectory } from "./session/session-directory";
@@ -103,7 +99,6 @@ export type {
 export {
   createAppPreferencesController,
   DEFAULT_APP_PREFERENCES,
-  EMPTY_APP_PREFERENCES_SNAPSHOT,
 } from "./preferences/app-preferences";
 export type {
   AppPreferencesController,

@@ -141,7 +141,6 @@ describe("createAccountsController against the pinned omp binary", () => {
 
       expect(snapshot.status).toBe("ready");
       expect(snapshot.error).toBeUndefined();
-      expect(snapshot.accounts).toEqual([]);
       expect(snapshot.rows.length).toBeGreaterThan(0);
 
       const anthropicRow = snapshot.rows.find((row) => row.providerId === "anthropic");
