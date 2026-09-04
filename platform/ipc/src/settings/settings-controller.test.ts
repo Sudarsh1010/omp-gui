@@ -86,6 +86,19 @@ describe("createSettingsController against nodeBridge's config bridge", () => {
     expect(ctl.snapshot().rows.get("retry.maxRetries")?.rejected).toContain("Invalid number");
   }, 30_000);
 
+  it("unset restores the entry to its schema default and marks the row saved", async () => {
+    const ctl = makeController();
+    await waitForSnapshot(ctl, (s) => s.status === "ready");
+    await ctl.set("autoResume", true);
+    expect(ctl.snapshot().entries.get("autoResume")?.value).toBe(true);
+
+    await ctl.unset("autoResume");
+
+    expect(ctl.snapshot().entries.get("autoResume")?.value).toBe(false);
+    expect(ctl.snapshot().rows.get("autoResume")?.saved).toBe(true);
+    expect(ctl.snapshot().rows.get("autoResume")?.rejected).toBeUndefined();
+  }, 30_000);
+
   it("saved is set after a write and clears after the indicator window", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const ctl = makeController();

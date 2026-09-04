@@ -24,10 +24,20 @@ export interface SettingsLayoutProps {
   children: ReactNode;
 }
 
+/** Rail order (ADR-0011 "Information architecture"): App Preferences;
+ * Models, Accounts; omp's tabs in schema order; Advanced. `group` is each
+ * section's own coarse ordering key (`sections.ts`'s doc comment) — a
+ * stable sort on it, not concatenation order, is what keeps the dynamic
+ * omp tabs (`group: "omp"`) landing before the static `advanced` entry
+ * regardless of which array either section came from. */
+const GROUP_ORDER: Record<SettingsSection["group"], number> = { app: 0, bespoke: 1, omp: 2, advanced: 3 };
+
 export function SettingsLayout({ dynamicSections = [], children }: SettingsLayoutProps) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const sections = [...STATIC_SECTIONS, ...dynamicSections];
+  const sections = [...STATIC_SECTIONS, ...dynamicSections].sort(
+    (a, b) => GROUP_ORDER[a.group] - GROUP_ORDER[b.group],
+  );
 
   const goBack = useCallback(() => {
     void navigate({ href: originHref() });

@@ -1,15 +1,20 @@
 /**
  * Advanced section (#24, issue #19 story #16; ADR-0011 "no key ever has
- * two editors"): every key `config list --json` reports, sorted by key
- * and grouped by its dot-prefix (`retry.*`, `browser.*`, … — the same
- * grouping `omp config list --json`'s own key namespacing implies, see
- * `04-omp-cli-surface.md` §1; a bare top-level key like `autoResume`
- * groups under "General") — the catch-all rendering issue #19 story #16
- * asks for ("settings omp's own panel hides... collected under Advanced
- * with a typed editor, so that 'all config' really means all"), and
- * ADR-0011's guaranteed fallback when an override binary predates
- * `config schema` (#26's schema-driven tabs have nothing to render, but
- * this section only ever depends on `configList`).
+ * two editors"): grouped by dot-prefix (`retry.*`, `browser.*`, … — the
+ * same grouping `omp config list --json`'s own key namespacing implies,
+ * see `04-omp-cli-surface.md` §1; a bare top-level key like `autoResume`
+ * groups under "General") and sorted by key.
+ *
+ * #26 shrinks the rendered set once `config schema --json` resolves: only
+ * keys `SchemaEntry.tab` never names (the schema's own "no UI" keys,
+ * `uilessKeys` below) plus every `CLAIMED_KEYS` pointer are shown — every
+ * other key already has a generic editor on its schema tab, and ADR-0011
+ * forbids a key ever having two. While the schema is still loading, or on
+ * an override binary old enough to lack `config schema` entirely
+ * (`schemaState.status === "unavailable"`), `uilessKeys` stays `undefined`
+ * and every key `configList()` reports renders here — ADR-0011's
+ * guaranteed Advanced-only fallback so an old override degrades instead
+ * of going blank.
  *
  * A key claimed by a bespoke section (`claims.ts`) renders as a pointer
  * row — "Edited in <label>" plus a `Link` to that section — instead of a
@@ -21,13 +26,13 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { ConfigEntry, RowState } from "@omp-gui/ipc";
+import type { ConfigEntry } from "@omp-gui/ipc";
 import { useSettingsContext } from "./settings-context";
 import { useSettings } from "@gui/settings/use-settings";
 import { useConfigSchema } from "@gui/settings/use-config-schema";
 import { useBundledOmp } from "@gui/settings/use-bundled-omp";
 import { SettingsGroup } from "./settings-group";
-import { SettingsRow, type RowStatus } from "./settings-row";
+import { SettingsRow, rowStatusFromState, type RowStatus } from "./settings-row";
 import { SectionSkeleton } from "./section-skeleton";
 import { SectionError } from "./section-error";
 import { SessionsNote } from "./sessions-note";
@@ -49,14 +54,6 @@ function sectionPath(section: SectionId): string {
   return section.startsWith("tab:") ? `/settings/${section.slice(4)}` : `/settings/${section}`;
 }
 
-function toRowStatus(row: RowState | undefined): RowStatus {
-  if (!row) return { kind: "idle" };
-  if (row.rejected) return { kind: "rejected", message: row.rejected };
-  if (row.saved) return { kind: "saved" };
-  if (row.pending) return { kind: "saving" };
-  return { kind: "idle" };
-}
-
 export function AdvancedSection() {
   const { bridge, settings } = useSettingsContext();
   if (!settings) {
@@ -74,8 +71,19 @@ export function AdvancedSection() {
     [schemaState],
   );
 
+  const uilessKeys = useMemo(
+    () =>
+      schemaState.status === "ready"
+        ? new Set(schemaState.schema.settings.filter((s) => !s.tab).map((s) => s.key))
+        : undefined,
+    [schemaState],
+  );
+
   const groups = useMemo(() => {
-    const sorted = [...snapshot.entries.values()].sort((a, b) => a.key.localeCompare(b.key));
+    const visible = [...snapshot.entries.values()].filter(
+      (entry) => !uilessKeys || uilessKeys.has(entry.key) || CLAIMED_KEYS[entry.key],
+    );
+    const sorted = visible.sort((a, b) => a.key.localeCompare(b.key));
     const byGroup = new Map<string, ConfigEntry[]>();
     for (const entry of sorted) {
       const group = keyGroup(entry.key);
@@ -84,7 +92,7 @@ export function AdvancedSection() {
       else byGroup.set(group, [entry]);
     }
     return [...byGroup.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [snapshot.entries]);
+  }, [snapshot.entries, uilessKeys]);
 
   if (snapshot.status === "loading" && snapshot.entries.size === 0) {
     return <SectionSkeleton rows={8} />;
@@ -136,7 +144,7 @@ export function AdvancedSection() {
       case "enum": {
         const values = schemaEntry?.values;
         return values && values.length > 0 ? (
-          <SelectEditor entry={entry} values={values} onSet={onSet} />
+          <SelectEditor entry={entry} options={values.map((value) => ({ value, label: value }))} onSet={onSet} />
         ) : (
           <TextEditor key={rejected} entry={entry} onSet={onSet} />
         );
@@ -185,7 +193,7 @@ export function AdvancedSection() {
             const localError = localErrors.get(entry.key);
             const status: RowStatus = localError
               ? { kind: "rejected", message: localError }
-              : toRowStatus(snapshot.rows.get(entry.key));
+              : rowStatusFromState(snapshot.rows.get(entry.key));
             return (
               <SettingsRow
                 key={entry.key}
