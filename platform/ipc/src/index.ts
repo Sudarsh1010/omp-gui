@@ -158,3 +158,8 @@ export type {
   ModelsCatalogStatus,
 } from "./settings/models-catalog";
 export type { ModelEntry, ModelsCatalog } from "./bindings/bindings.gen";
+
+export { evaluateCondition, jsonValueEquals } from "./settings/conditions";
+export type { ConditionEnv } from "./settings/conditions";
+export { buildSchemaView } from "./settings/schema-view";
+export type { SchemaView, SchemaTabView, SchemaGroupView, SchemaRowView } from "./settings/schema-view";

@@ -58,6 +58,16 @@ export interface SettingsController {
   set(key: string, value: unknown): Promise<void>;
   /** Restore `key` to omp's current schema default. */
   reset(key: string): Promise<void>;
+  /**
+   * Removes `key` from the global config file entirely (distinct from
+   * `reset`, which writes an explicit default value in the record
+   * itself) — issue #19 story #13's "per-row action that returns a
+   * setting to omp's current default, labelled by what it actually
+   * does", true unset now that the pinned binary carries `config unset`.
+   * Re-lists afterward so the row's value reflects the schema default
+   * `config unset` leaves in its place, and marks the row `saved`.
+   */
+  unset(key: string): Promise<void>;
   dispose(): void;
 }
 
@@ -67,11 +77,16 @@ const SAVED_INDICATOR_MS = 1500;
 
 function configBridge(
   bridge: ShellBridge,
-): Required<Pick<ShellBridge, "configList" | "configSet" | "configReset">> {
-  if (!bridge.configList || !bridge.configSet || !bridge.configReset) {
+): Required<Pick<ShellBridge, "configList" | "configSet" | "configReset" | "configUnset">> {
+  if (!bridge.configList || !bridge.configSet || !bridge.configReset || !bridge.configUnset) {
     throw new Error("this ShellBridge does not implement the config bridge");
   }
-  return { configList: bridge.configList, configSet: bridge.configSet, configReset: bridge.configReset };
+  return {
+    configList: bridge.configList,
+    configSet: bridge.configSet,
+    configReset: bridge.configReset,
+    configUnset: bridge.configUnset,
+  };
 }
 
 /** Narrows a `BridgeCommandError<CliError>` into the snapshot's
@@ -171,6 +186,19 @@ export function createSettingsController(bridge: ShellBridge): SettingsControlle
         const updated = await configBridge(bridge).configReset(key);
         const entries = new Map(snapshot.entries);
         entries.set(key, updated);
+        emit({ entries });
+        setRow(key, { pending: false, saved: true, rejected: undefined });
+        scheduleSavedClear(key);
+      } catch (error) {
+        setRow(key, { pending: false, saved: false, rejected: rejectionMessage(error) });
+      }
+    },
+    async unset(key) {
+      setRow(key, { pending: true, rejected: undefined });
+      try {
+        await configBridge(bridge).configUnset(key);
+        const list = await configBridge(bridge).configList();
+        const entries = new Map(list.map((entry) => [entry.key, entry] as const));
         emit({ entries });
         setRow(key, { pending: false, saved: true, rejected: undefined });
         scheduleSavedClear(key);
