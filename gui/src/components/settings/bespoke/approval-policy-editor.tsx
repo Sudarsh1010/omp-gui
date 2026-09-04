@@ -28,6 +28,7 @@ import { Button } from "@omp-gui/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@omp-gui/ui/components/toggle-group";
 import { cn } from "@omp-gui/ui/lib/utils";
 import { useSettingsContext } from "../settings-context";
+import { rowStatusFromState, SettingsRow } from "../settings-row";
 import { useConfigSchema } from "@gui/settings/use-config-schema";
 import type { BespokeEditorProps } from "./bespoke-editor";
 
@@ -86,24 +87,15 @@ export function ApprovalPolicyEditor({ entry, value }: BespokeEditorProps) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex min-h-8 items-center justify-between gap-2 px-3 py-2">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-xs font-medium text-foreground" title={entry.key}>
-            Approval
-          </span>
-          {entry.description && (
-            <p className="text-xs text-muted-foreground">{entry.description}</p>
-          )}
-        </div>
-        {rowState?.rejected && (
-          <span className="shrink-0 bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
-            {rowState.rejected}
-          </span>
-        )}
-        {!rowState?.rejected && rowState?.saved && (
-          <span className="shrink-0 text-xs text-muted-foreground">Saved</span>
-        )}
-      </div>
+      <SettingsRow
+        rowKey={`tab.${entry.key}`}
+        label="Approval"
+        description={entry.description ?? undefined}
+        keyPath={entry.key}
+        status={rowStatusFromState(rowState)}
+      >
+        {null}
+      </SettingsRow>
       {tools.map((tool) => {
         const policy = record[tool];
         return (

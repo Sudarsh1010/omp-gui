@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@omp-gui/ui/components/select";
 import { useSettingsContext } from "../settings-context";
+import { rowStatusFromState, SettingsRow } from "../settings-row";
 import { useModelsList } from "./use-models-list";
 import type { BespokeEditorProps } from "./bespoke-editor";
 
@@ -74,24 +75,15 @@ export function FallbackChainsEditor({ entry, value }: BespokeEditorProps) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex min-h-8 items-center justify-between gap-2 px-3 py-2">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-xs font-medium text-foreground" title={entry.key}>
-            Fallback Chains
-          </span>
-          {entry.description && (
-            <p className="text-xs text-muted-foreground">{entry.description}</p>
-          )}
-        </div>
-        {rowState?.rejected && (
-          <span className="shrink-0 bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
-            {rowState.rejected}
-          </span>
-        )}
-        {!rowState?.rejected && rowState?.saved && (
-          <span className="shrink-0 text-xs text-muted-foreground">Saved</span>
-        )}
-      </div>
+      <SettingsRow
+        rowKey={`tab.${entry.key}`}
+        label="Fallback Chains"
+        description={entry.description ?? undefined}
+        keyPath={entry.key}
+        status={rowStatusFromState(rowState)}
+      >
+        {null}
+      </SettingsRow>
       {keys.map((key) => {
         const chain = record[key] ?? [];
         const isRole = ROLE_KEYS.includes(key);
@@ -121,31 +113,32 @@ export function FallbackChainsEditor({ entry, value }: BespokeEditorProps) {
               {chain.map((selector, index) => (
                 <Badge key={`${selector}-${index}`} variant="outline" className="gap-1 py-1">
                   <span className="font-mono">{selector}</span>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     aria-label={`Move ${selector} up`}
                     disabled={index === 0}
-                    className="disabled:opacity-30"
                     onClick={() => writeRecord(moveChainEntry(record, key, index, "up"))}
                   >
                     <CaretUpIcon />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     aria-label={`Move ${selector} down`}
                     disabled={index === chain.length - 1}
-                    className="disabled:opacity-30"
                     onClick={() => writeRecord(moveChainEntry(record, key, index, "down"))}
                   >
                     <CaretDownIcon />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     aria-label={`Remove ${selector}`}
                     onClick={() => writeRecord(moveChainEntry(record, key, index, "remove"))}
                   >
                     <XIcon />
-                  </button>
+                  </Button>
                 </Badge>
               ))}
               {models.status === "ready" ? (
