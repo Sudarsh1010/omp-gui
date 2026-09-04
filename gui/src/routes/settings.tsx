@@ -7,7 +7,7 @@ import { SettingsProvider, useSettingsContext } from "@gui/components/settings/s
 import { SettingsBanner } from "@gui/components/settings/settings-banner";
 import { useSettings } from "@gui/settings/use-settings";
 import { useBundledOmp } from "@gui/settings/use-bundled-omp";
-import { useConfigSchema } from "@gui/settings/use-config-schema";
+import { invalidateConfigSchema, useConfigSchema } from "@gui/settings/use-config-schema";
 
 /** Loose `{ row?: string }` shape (#28, issue #19 "Search" — "navigation
  * scroll-highlights the row"): every Settings route inherits this since
@@ -93,7 +93,13 @@ function SettingsRouteContent({ settings }: { settings: SettingsController }) {
           message={`${snapshot.error.stage}: ${snapshot.error.message}`}
           actions={[
             { label: "Use bundled omp", onClick: () => void useBundled() },
-            { label: "Retry", onClick: () => void settings.reload() },
+            {
+              label: "Retry",
+              onClick: () => {
+                invalidateConfigSchema();
+                void settings.reload();
+              },
+            },
           ]}
         />
       )}

@@ -106,9 +106,12 @@ export function OmpBinaryRow() {
     setInfo(next);
   }, [bridge]);
 
+  // Re-read the resolved binary whenever the committed override changes,
+  // including out-of-band reverts from the degraded banner's "Use bundled
+  // omp" (`use-bundled-omp.ts`), which only reloads preferences.
   useEffect(() => {
     void loadInfo();
-  }, [loadInfo]);
+  }, [loadInfo, committedPath]);
 
   // Keep the draft input in sync with the committed value whenever it
   // changes out-of-band (another writer, or this row's own "Use bundled

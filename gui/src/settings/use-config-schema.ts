@@ -6,7 +6,10 @@
  * `.secret` off of it, and there is no reason to shell out to `omp` again
  * for every mounted row. An override binary that predates `config schema`
  * rejects — callers degrade (#24 falls an enum row back to a free-text
- * input) rather than block on it forever.
+ * input) rather than block on it forever. A rejection is not cached, and
+ * `invalidateConfigSchema()` drops a cached success, so recovering from a
+ * broken override ("Use bundled omp", "Retry") re-asks the binary that is
+ * actually running now.
  */
 import { useEffect, useState } from "react";
 import type { ConfigSchema, ShellBridge } from "@omp-gui/ipc";
@@ -17,21 +20,45 @@ export type ConfigSchemaState =
   | { status: "unavailable" };
 
 let cachedSchema: Promise<ConfigSchema> | undefined;
+let generation = 0;
+const listeners = new Set<() => void>();
 
 function loadConfigSchema(bridge: ShellBridge): Promise<ConfigSchema> {
   if (!cachedSchema) {
-    cachedSchema = bridge.configSchema
+    const attempt = bridge.configSchema
       ? bridge.configSchema()
       : Promise.reject(new Error("this ShellBridge does not implement configSchema"));
+    cachedSchema = attempt;
+    attempt.catch(() => {
+      if (cachedSchema === attempt) cachedSchema = undefined;
+    });
   }
   return cachedSchema;
 }
 
+/** Forget any cached schema and make every mounted `useConfigSchema`
+ * re-fetch — call after the resolved omp binary may have changed. */
+export function invalidateConfigSchema(): void {
+  cachedSchema = undefined;
+  generation += 1;
+  for (const listener of listeners) listener();
+}
+
 export function useConfigSchema(bridge: ShellBridge): ConfigSchemaState {
   const [state, setState] = useState<ConfigSchemaState>({ status: "loading" });
+  const [version, setVersion] = useState(generation);
+
+  useEffect(() => {
+    const listener = () => setVersion(generation);
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    setState({ status: "loading" });
     loadConfigSchema(bridge).then(
       (schema) => {
         if (!cancelled) setState({ status: "ready", schema });
@@ -43,7 +70,7 @@ export function useConfigSchema(bridge: ShellBridge): ConfigSchemaState {
     return () => {
       cancelled = true;
     };
-  }, [bridge]);
+  }, [bridge, version]);
 
   return state;
 }
