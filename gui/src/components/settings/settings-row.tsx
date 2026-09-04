@@ -5,8 +5,17 @@
  * a stone (never emerald — the Two-Signals Rule reserves emerald for
  * agent-working/succeeded) "modified" dot, and an inline save-status
  * indicator beside the control instead of a toast (issue #19 story #10).
+ *
+ * Also the single scroll-highlight anchor every Settings row shares
+ * (#28, issue #19 "Search"): `useRowHighlight(rowKey)` scrolls this row
+ * into view and pulses a Stone Mist wash (`bg-muted`, faded out by
+ * `transition-colors` rather than a bespoke keyframe) when navigation
+ * arrives with a matching `?row=<rowKey>` — every row gets this for free,
+ * no section renders it itself.
  */
 import type { ReactNode } from "react";
+import { cn } from "@omp-gui/ui/lib/utils";
+import { useRowHighlight } from "@gui/settings/use-row-highlight";
 
 export type RowStatus =
   | { kind: "idle" }
@@ -47,11 +56,15 @@ export function SettingsRow({
   status,
   children,
 }: SettingsRowProps) {
+  const pulsing = useRowHighlight(rowKey);
   return (
     <div
       data-settings-row={rowKey}
       id={`row-${rowKey}`}
-      className="group flex min-h-8 items-center justify-between gap-4 px-3 py-2"
+      className={cn(
+        "group flex min-h-8 items-center justify-between gap-4 px-3 py-2 transition-colors duration-700",
+        pulsing && "bg-muted",
+      )}
     >
       <div className="flex min-w-0 flex-1 basis-0 flex-col gap-0.5">
         <div className="flex items-center gap-2">

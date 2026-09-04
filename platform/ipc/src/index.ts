@@ -163,3 +163,6 @@ export { evaluateCondition, jsonValueEquals } from "./settings/conditions";
 export type { ConditionEnv } from "./settings/conditions";
 export { buildSchemaView } from "./settings/schema-view";
 export type { SchemaView, SchemaTabView, SchemaGroupView, SchemaRowView } from "./settings/schema-view";
+
+export { buildSearchIndex, searchSettings } from "./settings/search-index";
+export type { SearchSource, SearchHit, SearchIndex } from "./settings/search-index";
