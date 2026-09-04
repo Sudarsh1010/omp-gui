@@ -27,6 +27,8 @@ import { Input } from "@omp-gui/ui/components/input";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import { BridgeCommandError, type OmpBinaryInfo, type OmpBinarySource } from "@omp-gui/ipc";
 import { useAppPreferences } from "@gui/settings/use-app-preferences";
+import { useBundledOmp } from "@gui/settings/use-bundled-omp";
+import { invalidateConfigSchema } from "@gui/settings/use-config-schema";
 import { useSettingsContext } from "./settings-context";
 import { SettingsRow } from "./settings-row";
 
@@ -91,7 +93,8 @@ interface PendingAcknowledgement {
 }
 
 export function OmpBinaryRow() {
-  const { bridge, preferences } = useSettingsContext();
+  const { bridge, preferences, settings } = useSettingsContext();
+  const useBundled = useBundledOmp();
   const snapshot = useAppPreferences(preferences);
   const committedPath = snapshot.prefs.ompPath ?? "";
 
@@ -121,6 +124,10 @@ export function OmpBinaryRow() {
     setDraftPath(committedPath);
   }, [committedPath]);
 
+  // After the resolved binary changes (commit or revert), every omp-backed
+  // source must re-read against it: `useBundledOmp` reloads preferences +
+  // settings and re-fetches the schema; the same three steps apply after a
+  // successful commit, whose binary may describe a different settings surface.
   const commit = useCallback(
     async (path: string) => {
       if (!bridge.ompOverrideCommit) return;
@@ -130,11 +137,13 @@ export function OmpBinaryRow() {
         setInfo(nextInfo);
         setRun({ kind: "idle" });
         await preferences.reload();
+        invalidateConfigSchema();
+        await settings?.reload();
       } catch (error) {
         setRun({ kind: "failed", failure: describeFailure(error) });
       }
     },
-    [bridge, preferences],
+    [bridge, preferences, settings],
   );
 
   const handleTestAndUse = useCallback(async () => {
@@ -163,18 +172,15 @@ export function OmpBinaryRow() {
   }, [commit, pending]);
 
   const handleUseBundled = useCallback(async () => {
-    if (!bridge.ompOverrideClear) return;
     setRun({ kind: "running" });
     try {
-      const nextInfo = await bridge.ompOverrideClear();
-      setInfo(nextInfo);
+      await useBundled();
       setDraftPath("");
       setRun({ kind: "idle" });
-      await preferences.reload();
     } catch (error) {
       setRun({ kind: "failed", failure: describeFailure(error) });
     }
-  }, [bridge, preferences]);
+  }, [useBundled]);
 
   const running = run.kind === "running";
   const hasDraftChange = draftPath.trim() !== committedPath && draftPath.trim() !== "";

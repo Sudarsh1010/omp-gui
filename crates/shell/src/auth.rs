@@ -96,20 +96,41 @@ pub async fn auth_accounts_list(app: AppHandle) -> Result<Vec<AuthAccount>, CliE
     blocking(move || list_accounts(&app)).await
 }
 
+/// Providers are independent, and each `token <id> --list` is a ~1s omp
+/// start-up, so ~70 providers walked serially took a minute. Chunks of
+/// `ACCOUNTS_PARALLELISM` run on scoped threads; results keep provider order.
+const ACCOUNTS_PARALLELISM: usize = 8;
+
 fn list_accounts(app: &AppHandle) -> Result<Vec<AuthAccount>, CliError> {
     let providers: Vec<AuthProvider> = run_omp_json(app, &["auth-broker", "list", "--json"])?;
     let mut accounts = Vec::new();
-    for provider in &providers {
-        match run_omp_cli(app, &["token", &provider.id, "--list"]) {
-            Ok(output) => accounts.extend(parse_account_lines(&output.stdout, &provider.id)),
-            Err(CliError::Rejected { .. }) => {
-                // No accounts stored for this provider (or some other
-                // per-provider refusal) — not fatal to the aggregate list.
-                // `auth-broker list` is authoritative for what providers
-                // exist; a provider nobody has logged into simply
-                // contributes zero rows.
-            }
-            Err(err @ CliError::Unavailable { .. }) => return Err(err),
+    for chunk in providers.chunks(ACCOUNTS_PARALLELISM) {
+        let results: Vec<Result<Vec<AuthAccount>, CliError>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|provider| {
+                    scope.spawn(move || {
+                        match run_omp_cli(app, &["token", &provider.id, "--list"]) {
+                            Ok(output) => Ok(parse_account_lines(&output.stdout, &provider.id)),
+                            // No accounts stored for this provider (or some
+                            // other per-provider refusal) — not fatal to the
+                            // aggregate list. `auth-broker list` is
+                            // authoritative for what providers exist; a
+                            // provider nobody has logged into simply
+                            // contributes zero rows.
+                            Err(CliError::Rejected { .. }) => Ok(Vec::new()),
+                            Err(err @ CliError::Unavailable { .. }) => Err(err),
+                        }
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("token --list worker panicked"))
+                .collect()
+        });
+        for result in results {
+            accounts.extend(result?);
         }
     }
     Ok(accounts)
