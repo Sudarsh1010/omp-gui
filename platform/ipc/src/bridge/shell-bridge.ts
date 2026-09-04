@@ -26,6 +26,8 @@ import type {
   AuthProvider,
   AuthAccount,
   CliError,
+  ModelEntry,
+  ModelsCatalog,
 } from "../bindings/bindings.gen";
 
 export type {
@@ -55,6 +57,8 @@ export type {
   AuthProvider,
   AuthAccount,
   CliError,
+  ModelEntry,
+  ModelsCatalog,
 };
 
 export interface ShellBridge {
@@ -249,6 +253,15 @@ export interface ShellBridge {
    * directly.
    */
   authLogout?(providerId: string): Promise<void>;
+  /**
+   * omp's own model catalog (ADR-0011 "Bespoke sections"): every model
+   * across every provider with at least one credential present, flat and
+   * ungrouped. The Models section groups it by provider and joins it with
+   * `enabledModels`/`disabledProviders`/`modelRoles` from the config
+   * bridge — this call reports only what exists, never enable/role state.
+   * Optional for the same reason as `configList`.
+   */
+  modelsList?(): Promise<ModelsCatalog>;
 }
 
 /**

@@ -26,6 +26,7 @@ import type {
   CliError,
   AuthProvider,
   AuthAccount,
+  ModelsCatalog,
 } from "../bindings/bindings.gen";
 
 /** Mirrors `crates/shell/src/sessions.rs`'s scan window constants exactly,
@@ -782,5 +783,6 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
     async authLogout(providerId: string): Promise<void> {
       await runOmpCli(binaryPath, ["auth-broker", "logout", providerId], agentDir);
     },
+    modelsList: () => runOmpJson<ModelsCatalog>(binaryPath, ["models", "--json"], agentDir),
   };
 }
