@@ -21,6 +21,12 @@ export interface SettingsRowProps {
   rowKey: string;
   label: string;
   description?: string;
+  /** Risk note (`SchemaEntry.warning`, #26 issue #19): rendered above the
+   * description in destructive-on-wash styling (`bg-destructive/10
+   * text-destructive`, the Wash-Not-Block Rule — never a solid red fill)
+   * for a setting that "can get the user rate-limited, flagged, or
+   * banned", per the schema's own doc comment for the field. */
+  warning?: string;
   /** The underlying config key path, e.g. `browser.chromiumPath` — shown
    * in mono on hover only, never always-visible (issue #19 "Row shape"). */
   keyPath?: string;
@@ -35,6 +41,7 @@ export function SettingsRow({
   rowKey,
   label,
   description,
+  warning,
   keyPath,
   modified,
   status,
@@ -62,6 +69,7 @@ export function SettingsRow({
             </span>
           )}
         </div>
+        {warning && <p className="bg-destructive/10 px-1 py-0.5 text-xs text-destructive">{warning}</p>}
         {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
       <div className="flex min-w-0 max-w-[60%] shrink-0 items-center gap-2">
@@ -80,4 +88,17 @@ function RowStatusIndicator({ status }: { status: RowStatus | undefined }) {
   return (
     <span className="bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">{status.message}</span>
   );
+}
+
+/** Derives a `SettingsRow` `status` from a `SettingsController`'s
+ * per-key `RowState` (#24/#26): shared by every generic Settings section
+ * (`advanced-section.tsx`, `schema-tab-section.tsx`) so a controller's
+ * pending/saved/rejected fields map onto the row's visible state the
+ * same way everywhere — `rejected` wins over `saved` over `pending`. */
+export function rowStatusFromState(row: { pending: boolean; saved: boolean; rejected?: string } | undefined): RowStatus {
+  if (!row) return { kind: "idle" };
+  if (row.rejected) return { kind: "rejected", message: row.rejected };
+  if (row.saved) return { kind: "saved" };
+  if (row.pending) return { kind: "saving" };
+  return { kind: "idle" };
 }

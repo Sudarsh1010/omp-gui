@@ -1,11 +1,12 @@
 /**
- * Enum Advanced-section editor (#24, issue #19): a discrete control that
- * writes on change. `values` comes from `SchemaEntry.values`
- * (`config list --json` never carries enum choices — the schema is the
- * only source, see `bindings.gen.ts`'s `SchemaEntry` doc comment);
- * `advanced-section.tsx` only renders this editor once the schema has
- * resolved and named this key's choices, falling back to `TextEditor`
- * otherwise.
+ * Enum/labeled-choice editor (#24 Advanced, #26 schema tabs; issue #19):
+ * a discrete control that writes on change. `options` is a caller-
+ * resolved `{value, label}` list — Advanced derives plain labels from
+ * `SchemaEntry.values` (`config list --json` never carries enum choices
+ * itself, see `bindings.gen.ts`'s `SchemaEntry` doc comment); the schema
+ * tabs (`schema-tab-section.tsx`) resolve richer `{value, label,
+ * description}` triples from `SchemaEntry.options` when the schema names
+ * them, falling back to plain `values` otherwise.
  */
 import {
   Select,
@@ -16,11 +17,17 @@ import {
 } from "@omp-gui/ui/components/select";
 import type { ConfigEditorProps } from "./config-editor";
 
-export interface SelectEditorProps extends ConfigEditorProps {
-  values: string[];
+export interface SelectOption {
+  value: string;
+  label: string;
+  description?: string;
 }
 
-export function SelectEditor({ entry, values, onSet }: SelectEditorProps) {
+export interface SelectEditorProps extends ConfigEditorProps {
+  options: SelectOption[];
+}
+
+export function SelectEditor({ entry, options, onSet }: SelectEditorProps) {
   const current = typeof entry.value === "string" ? entry.value : null;
 
   return (
@@ -29,9 +36,9 @@ export function SelectEditor({ entry, values, onSet }: SelectEditorProps) {
         <SelectValue placeholder="Select…" />
       </SelectTrigger>
       <SelectContent>
-        {values.map((option) => (
-          <SelectItem key={option} value={option}>
-            {option}
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value} title={option.description}>
+            {option.label}
           </SelectItem>
         ))}
       </SelectContent>
