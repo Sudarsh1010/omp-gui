@@ -5,8 +5,11 @@
  * directory-row.tsx`/`chromium-path-row.tsx`'s own `rowKey`s — there is
  * no controller to read these from generically, they're one-off rows),
  * Models' three claimed-key rows (mirroring `claims.ts`'s
- * `CLAIMED_KEYS`, also static — Models' search rows point at the whole
- * role/catalog/provider-switch surface, not at each individual model),
+ * `CLAIMED_KEYS`, also static — the roles hit points at the first role
+ * row (`model-role-smol`); the catalog hits point at the filter input's
+ * own `models-filter` row, since `enabledModels`/`disabledProviders`
+ * otherwise have no single row knowable ahead of a real `modelsList()`
+ * response — every provider/model row is one per catalog entry),
  * Accounts' single section-level row, every generic omp settings-tab row
  * (`buildSchemaView`, the same derivation `schema-tab-section.tsx` uses,
  * so a hit's `rowKey` always resolves to that section's real
@@ -84,7 +87,7 @@ const MODELS_SOURCES: SearchSource[] = [
     sectionLabel: "Models",
     to: "/settings/models",
     group: "Roles",
-    rowKey: "model-roles",
+    rowKey: "model-role-smol",
     keyPath: "modelRoles",
     label: "Model roles",
     description: "Assign the smol, default and slow model roles from the catalog.",
@@ -94,7 +97,7 @@ const MODELS_SOURCES: SearchSource[] = [
     sectionLabel: "Models",
     to: "/settings/models",
     group: "Catalog",
-    rowKey: "models-enabled",
+    rowKey: "models-filter",
     keyPath: "enabledModels",
     label: "Enabled models",
     description: "Which catalog models are available to pick from.",
@@ -104,7 +107,7 @@ const MODELS_SOURCES: SearchSource[] = [
     sectionLabel: "Models",
     to: "/settings/models",
     group: "Catalog",
-    rowKey: "models-disabled-providers",
+    rowKey: "models-filter",
     keyPath: "disabledProviders",
     label: "Disabled providers",
     description: "Providers hidden from the model catalog.",
