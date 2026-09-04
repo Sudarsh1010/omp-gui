@@ -7,10 +7,10 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { open, readdir, stat, readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { open, readdir, stat, readFile, writeFile, mkdir, rename, mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ShellBridge, OmpStartInfo } from "./shell-bridge";
+import { BridgeCommandError, type ShellBridge, type OmpStartInfo } from "./shell-bridge";
 import { RpcSession, type RpcTransport } from "../session/session";
 import type {
   OmpFrameEvent,
@@ -21,6 +21,9 @@ import type {
   AppPreferences,
   SmokeReport,
   SmokeStage,
+  ConfigEntry,
+  ConfigSchema,
+  CliError,
 } from "../bindings/bindings.gen";
 
 /** Mirrors `crates/shell/src/sessions.rs`'s scan window constants exactly,
@@ -384,6 +387,151 @@ async function smokeTestBinary(binaryPath: string): Promise<SmokeReport> {
   }
 }
 
+/** Raw stdout/stderr of one `runOmpCli` invocation. */
+interface CliOutput {
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * The Node mirror of `crates/shell/src/omp_cli.rs`'s `run_omp_cli`: runs
+ * the omp binary with a fresh, guaranteed-empty scratch directory as
+ * `cwd` (ADR-0011 — never the directory `nodeBridge` itself was
+ * constructed with, so a project's `.claude/settings.json` there can
+ * never merge into a config read/write), and `PI_CODING_AGENT_DIR` set to
+ * `agentDir` when given (contract `00-contracts.md`'s Hotspot note:
+ * "nodeBridge(binary, cwd, options) must accept an agentDir option that
+ * sets PI_CODING_AGENT_DIR for every process it spawns"); omitted
+ * `agentDir` leaves `process.env` untouched, so an outer
+ * `PI_CODING_AGENT_DIR` (set by the invoking test runner, per the
+ * session/model/login seam tests) still applies. A non-zero exit rejects
+ * with `BridgeCommandError<CliError>` shaped exactly like the Rust side's
+ * `CliError::Rejected` (omp's own stderr, falling back to stdout, both
+ * trimmed) so a seam test drives one contract regardless of which bridge
+ * backs it.
+ */
+async function runOmpCli(
+  binaryPath: string,
+  args: string[],
+  agentDir: string | undefined,
+): Promise<CliOutput> {
+  const scratch = await mkdtemp(join(tmpdir(), "omp-gui-config-scratch-"));
+  try {
+    return await new Promise<CliOutput>((resolve, reject) => {
+      let child: ChildProcess;
+      try {
+        child = spawn(binaryPath, args, {
+          cwd: scratch,
+          env: agentDir ? { ...process.env, PI_CODING_AGENT_DIR: agentDir } : process.env,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch (error) {
+        reject(
+          new BridgeCommandError<CliError>({
+            type: "unavailable",
+            stage: "spawn",
+            message: `failed to spawn ${binaryPath}: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+        );
+        return;
+      }
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString("utf8");
+      });
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString("utf8");
+      });
+      child.on("error", (error) => {
+        reject(
+          new BridgeCommandError<CliError>({
+            type: "unavailable",
+            stage: "spawn",
+            message: `failed to spawn ${binaryPath}: ${error.message}`,
+          }),
+        );
+      });
+      child.on("close", (code) => {
+        if (code !== 0) {
+          const message = stderr.trim() || stdout.trim();
+          reject(new BridgeCommandError<CliError>({ type: "rejected", message }));
+          return;
+        }
+        resolve({ stdout, stderr });
+      });
+    });
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
+/** `runOmpCli`, then parses `stdout` as JSON — the Node mirror of
+ * `run_omp_json`. A parse failure rejects with
+ * `CliError::Unavailable{stage:"parse"}`. */
+async function runOmpJson<T>(
+  binaryPath: string,
+  args: string[],
+  agentDir: string | undefined,
+): Promise<T> {
+  const { stdout } = await runOmpCli(binaryPath, args, agentDir);
+  try {
+    return JSON.parse(stdout) as T;
+  } catch (error) {
+    throw new BridgeCommandError<CliError>({
+      type: "unavailable",
+      stage: "parse",
+      message: `failed to parse omp's JSON output: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+/** Wire shape of one value in `omp config list --json`'s object — see
+ * `crates/shell/src/config.rs`'s `RawConfigValue` for the Rust mirror of
+ * this exact parse. */
+interface RawConfigValue {
+  value?: unknown;
+  type: string;
+  description?: string;
+  redacted?: boolean;
+}
+
+async function listConfigEntries(binaryPath: string, agentDir: string | undefined): Promise<ConfigEntry[]> {
+  const raw = await runOmpJson<Record<string, RawConfigValue>>(
+    binaryPath,
+    ["config", "list", "--json"],
+    agentDir,
+  );
+  return Object.entries(raw)
+    .map(([key, entry]) => ({
+      key,
+      value: (entry.value ?? null) as ConfigEntry["value"],
+      valueType: entry.type,
+      description: entry.description ?? "",
+      redacted: entry.redacted ?? false,
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** Re-reads the list after a `set`/`reset` and returns the one entry that
+ * changed — mirrors `config.rs`'s `entry_after` (`omp config set|reset
+ * --json` only echoes `{key, value}`, never `type`/`description`). */
+async function configEntryAfter(
+  binaryPath: string,
+  agentDir: string | undefined,
+  key: string,
+): Promise<ConfigEntry> {
+  const entries = await listConfigEntries(binaryPath, agentDir);
+  const entry = entries.find((candidate) => candidate.key === key);
+  if (!entry) {
+    throw new BridgeCommandError<CliError>({
+      type: "unavailable",
+      stage: "parse",
+      message: `omp config list --json has no entry for "${key}" after the write`,
+    });
+  }
+  return entry;
+}
 interface Session {
   child: ChildProcess;
   cleanup: () => void;
@@ -579,5 +727,19 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
           preferencesWrite: (prefs: AppPreferences) => writePreferencesFile(preferencesPath, prefs),
         }
       : {}),
+
+    configList: () => listConfigEntries(binaryPath, agentDir),
+    configSet: async (key: string, value: string) => {
+      await runOmpCli(binaryPath, ["config", "set", key, value, "--json"], agentDir);
+      return configEntryAfter(binaryPath, agentDir, key);
+    },
+    configReset: async (key: string) => {
+      await runOmpCli(binaryPath, ["config", "reset", key, "--json"], agentDir);
+      return configEntryAfter(binaryPath, agentDir, key);
+    },
+    configUnset: async (key: string) => {
+      await runOmpCli(binaryPath, ["config", "unset", key, "--json"], agentDir);
+    },
+    configSchema: () => runOmpJson<ConfigSchema>(binaryPath, ["config", "schema", "--json"], agentDir),
   };
 }

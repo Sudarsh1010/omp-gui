@@ -41,6 +41,13 @@ export function tauriBridge(): BrowserShellBridge {
     ompSmokeTest: (path) => commands.ompSmokeTest(path).then(unwrap),
     ompOverrideCommit: (path) => commands.ompOverrideCommit(path).then(unwrap),
     ompOverrideClear: () => commands.ompOverrideClear(),
+    configList: () => commands.configList().then(unwrap),
+    configSet: (key, value) => commands.configSet(key, value).then(unwrap),
+    configReset: (key) => commands.configReset(key).then(unwrap),
+    configUnset: async (key) => {
+      await commands.configUnset(key).then(unwrap);
+    },
+    configSchema: () => commands.configSchema().then(unwrap),
   };
 }
 /** Events expose listen() as Promise<unlisten>; bridge handlers need a sync unsubscribe. */

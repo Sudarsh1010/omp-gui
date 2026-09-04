@@ -16,11 +16,11 @@ import { PassThrough } from "node:stream";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { nodeBridge } from "./node";
 
-const spawnMock = vi.fn();
-const execFileSyncMock = vi.fn(() => "18.1.10");
+const spawnMock = vi.fn<(...args: unknown[]) => unknown>();
+const execFileSyncMock = vi.fn<(...args: unknown[]) => string>(() => "18.1.10");
 
 // Hoisted by vitest ahead of the static imports above, so `./node`'s own
 // `import { spawn, execFileSync } from "node:child_process"` resolves
@@ -136,10 +136,10 @@ describe("nodeBridge's start() spawn-cwd resolution (#22)", () => {
     await bridge.start();
 
     expect(execFileSyncMock).toHaveBeenCalledTimes(1);
-    const [, , execOptions] = execFileSyncMock.mock.calls[0] as [string, string[], { env?: Record<string, string> }];
+    const [, , execOptions] = execFileSyncMock.mock.calls[0] as unknown as [string, string[], { env?: Record<string, string> }];
     expect(execOptions.env?.PI_CODING_AGENT_DIR).toBe(agentDir);
 
-    const [, , spawnOptions] = spawnMock.mock.calls[0] as [string, string[], { env?: Record<string, string> }];
+    const [, , spawnOptions] = spawnMock.mock.calls[0] as unknown as [string, string[], { env?: Record<string, string> }];
     expect(spawnOptions.env?.PI_CODING_AGENT_DIR).toBe(agentDir);
   });
 });

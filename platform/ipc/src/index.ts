@@ -119,3 +119,13 @@ export type {
   ChromiumPathSource,
   PathProbe,
 } from "./bindings/bindings.gen";
+
+export { createSettingsController, EMPTY_SETTINGS_SNAPSHOT } from "./settings/settings-controller";
+export type {
+  SettingsController,
+  SettingsSnapshot,
+  SettingsStatus,
+  RowState,
+} from "./settings/settings-controller";
+export { serializeConfigValue } from "./settings/serialize";
+export type { ConfigEntry, ConfigSchema, SchemaTab, SchemaEntry, SchemaCondition, JsonValue, CliError, CliStage } from "./bindings/bindings.gen";

@@ -1,6 +1,8 @@
 mod browser;
 mod chromium_install;
+mod config;
 mod omp;
+mod omp_cli;
 mod preferences;
 mod sessions;
 mod smoke;
@@ -28,6 +30,11 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             omp::omp_smoke_test,
             omp::omp_override_commit,
             omp::omp_override_clear,
+            config::config_list,
+            config::config_set,
+            config::config_reset,
+            config::config_unset,
+            config::config_schema,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,
