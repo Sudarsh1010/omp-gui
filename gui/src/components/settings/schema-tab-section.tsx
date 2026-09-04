@@ -7,12 +7,18 @@
  * from scratch on every `entries` change, so there is nothing to
  * invalidate (issue #19 story #18).
  *
- * A key claimed by a bespoke section is already absent from
- * `buildSchemaView`'s groups (it excludes `claimed` keys outright, see
- * `schema-view.ts`) — this component never has to special-case them.
+ * A key claimed by a section with no tab home of its own (`models`) is
+ * absent from `buildSchemaView`'s groups entirely (`claimed` below excludes
+ * it, see `schema-view.ts`) — this component never has to special-case it.
+ * A key claimed by a *tab-owned* bespoke section (`#29`'s approval/
+ * fallback-chains/provider-limits editors — `claims.ts`'s `"tab:<id>"`
+ * claims) stays in its own home tab's row list instead, since that is
+ * exactly where its bespoke editor belongs; `BESPOKE_EDITORS` below is
+ * consulted per row so it renders there once, in place of the generic
+ * per-type editor, never as a second copy anywhere else.
  */
 import { useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
 import {
@@ -41,7 +47,19 @@ import { JsonEditor } from "./editors/json-editor";
 import { SecretEditor } from "./editors/secret-editor";
 import { SelectEditor, type SelectOption } from "./editors/select-editor";
 import { MultiSelectEditor } from "./editors/multi-select-editor";
+import { ApprovalPolicyEditor } from "./bespoke/approval-policy-editor";
+import { FallbackChainsEditor } from "./bespoke/fallback-chains-editor";
+import { ProviderLimitsEditor } from "./bespoke/provider-limits-editor";
+import type { BespokeEditorProps } from "./bespoke/bespoke-editor";
 
+/** Claimed keys with their own bespoke schema-tab editor (#29) — every
+ * other `"tab:<id>"` claim in `claims.ts` (there are none yet) would fall
+ * through to the generic editor for its type. */
+const BESPOKE_EDITORS: Record<string, ComponentType<BespokeEditorProps>> = {
+  "tools.approval": ApprovalPolicyEditor,
+  "retry.fallbackChains": FallbackChainsEditor,
+  "providers.maxInFlightRequests": ProviderLimitsEditor,
+};
 export interface SchemaTabSectionProps {
   tabId: string;
 }
@@ -78,7 +96,20 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
   const navigate = useNavigate();
   const [localErrors, setLocalErrors] = useState<ReadonlyMap<string, string>>(new Map());
 
-  const claimed = useMemo(() => new Set(Object.keys(CLAIMED_KEYS)), []);
+  // Only fully excludes keys claimed by a section with no tab home of its
+  // own (e.g. `models`) — a `"tab:<id>"` claim (#29's bespoke editors)
+  // stays in `buildSchemaView`'s groups so it still renders at its
+  // schema position, just via `BESPOKE_EDITORS` below instead of the
+  // generic per-type editor.
+  const claimed = useMemo(
+    () =>
+      new Set(
+        Object.entries(CLAIMED_KEYS)
+          .filter(([, claim]) => !claim.section.startsWith("tab:"))
+          .map(([key]) => key),
+      ),
+    [],
+  );
   const env = useMemo(() => ({ platform: detectPlatform(), terminalCapabilities: new Set<string>() }), []);
 
   const view = useMemo(
@@ -178,6 +209,12 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
   function renderRow(row: SchemaRowView): ReactNode {
     if (!row.visible || !row.value) return null;
     const { entry, value } = row;
+
+    const Bespoke = BESPOKE_EDITORS[entry.key];
+    if (Bespoke) {
+      return <Bespoke key={entry.key} entry={entry} value={value} />;
+    }
+
     const localError = localErrors.get(entry.key);
     const status: RowStatus = localError
       ? { kind: "rejected", message: localError }
