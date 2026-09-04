@@ -23,7 +23,7 @@ export function TextEditor({ entry, onSet }: ConfigEditorProps) {
   return (
     <Input
       value={value}
-      className="w-64"
+      className="w-64 min-w-0"
       onChange={(event) => setValue(event.target.value)}
       onBlur={() => {
         if (value !== saved) onSet(value);

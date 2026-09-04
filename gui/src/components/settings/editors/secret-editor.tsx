@@ -18,7 +18,7 @@ export function SecretEditor({ onSet }: ConfigEditorProps) {
       type="password"
       value={value}
       placeholder="set to replace"
-      className="w-56"
+      className="w-56 min-w-0"
       onChange={(event) => setValue(event.target.value)}
       onBlur={() => {
         if (value === "") return;

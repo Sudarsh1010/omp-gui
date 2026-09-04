@@ -24,7 +24,7 @@ export function NumberEditor({ entry, onSet }: ConfigEditorProps) {
     <Input
       type="number"
       value={value}
-      className="w-32"
+      className="w-32 min-w-0"
       onChange={(event) => setValue(event.target.value)}
       onBlur={() => {
         if (value !== saved) onSet(value);

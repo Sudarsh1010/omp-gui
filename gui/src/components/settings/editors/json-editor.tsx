@@ -25,7 +25,7 @@ export function JsonEditor({ entry, onSet, onInvalid }: JsonEditorProps) {
   return (
     <Textarea
       value={value}
-      className="w-80 font-mono text-[11px]"
+      className="w-64 min-w-0 font-mono text-[11px]"
       rows={4}
       onChange={(event) => setValue(event.target.value)}
       onBlur={() => {

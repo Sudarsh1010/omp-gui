@@ -62,7 +62,8 @@ export function AdvancedSection() {
   if (!settings) {
     throw new Error("AdvancedSection requires routes/settings.tsx's SettingsController in context");
   }
-  const snapshot = useSettings(settings);
+  const controller = settings;
+  const snapshot = useSettings(controller);
   const schemaState = useConfigSchema(bridge);
   const useBundled = useBundledOmp();
   const navigate = useNavigate();
@@ -114,8 +115,17 @@ export function AdvancedSection() {
     const schemaEntry = schemaByKey?.get(entry.key);
     const onSet = (value: unknown) => {
       setLocalError(entry.key, undefined);
-      void settings!.set(entry.key, value);
+      void controller.set(entry.key, value);
     };
+    // Text/number/JSON editors buffer their own draft text in local
+    // state, so a rejection (which leaves `entries` — and therefore
+    // `saved`/`entry.value` — untouched) can't revert them just by
+    // re-rendering with the same props. Keying on the rejection message
+    // remounts the editor whenever a rejection appears or clears,
+    // resetting its draft back to the entry's last-known-good value
+    // (switch/select need no such key: they read `entry.value` directly
+    // with no local buffer to revert).
+    const rejected = snapshot.rows.get(entry.key)?.rejected;
 
     if (entry.redacted || schemaEntry?.secret) {
       return <SecretEditor entry={entry} onSet={onSet} />;
@@ -128,18 +138,23 @@ export function AdvancedSection() {
         return values && values.length > 0 ? (
           <SelectEditor entry={entry} values={values} onSet={onSet} />
         ) : (
-          <TextEditor entry={entry} onSet={onSet} />
+          <TextEditor key={rejected} entry={entry} onSet={onSet} />
         );
       }
       case "number":
-        return <NumberEditor entry={entry} onSet={onSet} />;
+        return <NumberEditor key={rejected} entry={entry} onSet={onSet} />;
       case "array":
       case "record":
         return (
-          <JsonEditor entry={entry} onSet={onSet} onInvalid={(message) => setLocalError(entry.key, message)} />
+          <JsonEditor
+            key={rejected}
+            entry={entry}
+            onSet={onSet}
+            onInvalid={(message) => setLocalError(entry.key, message)}
+          />
         );
       default:
-        return <TextEditor entry={entry} onSet={onSet} />;
+        return <TextEditor key={rejected} entry={entry} onSet={onSet} />;
     }
   }
 
