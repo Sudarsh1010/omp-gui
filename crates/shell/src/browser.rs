@@ -360,11 +360,9 @@ pub fn browser_launch(
     // config write must not fail the launch itself — the pane's
     // screencast and human Takeover driving both work with no dependency
     // on omp ever attaching.
-    if let Ok((omp_path, _source)) = crate::omp::resolve_omp_path(&app) {
-        if let Err(_err) = set_connected_cdp_config(&omp_path, &app, Some(&info.cdp_url)) {
-            #[cfg(debug_assertions)]
-            eprintln!("[browser cdp-config] failed to set browser.cdpUrl: {_err}");
-        }
+    if let Err(_err) = set_connected_cdp_config(&app, Some(&info.cdp_url)) {
+        #[cfg(debug_assertions)]
+        eprintln!("[browser cdp-config] failed to set browser.cdpUrl: {_err}");
     }
     Ok(info)
 }
@@ -402,11 +400,9 @@ pub fn browser_stop(
         // `browser.cdpUrl` now that this project's last interested party
         // has released the Chromium (see `set_connected_cdp_config`'s doc
         // comment for why a failure here must not block the teardown).
-        if let Ok((omp_path, _source)) = crate::omp::resolve_omp_path(&app) {
-            if let Err(_err) = set_connected_cdp_config(&omp_path, &app, None) {
-                #[cfg(debug_assertions)]
-                eprintln!("[browser cdp-config] failed to reset browser.cdpUrl: {_err}");
-            }
+        if let Err(_err) = set_connected_cdp_config(&app, None) {
+            #[cfg(debug_assertions)]
+            eprintln!("[browser cdp-config] failed to reset browser.cdpUrl: {_err}");
         }
     }
     Ok(())
@@ -424,40 +420,16 @@ pub fn browser_stop(
 /// only omp sessions started *after* this call see it. That gap is
 /// accepted, not closed, by both `browser_launch` and `browser_stop`,
 /// which therefore treat every call here as best-effort.
-fn set_connected_cdp_config(
-    omp_path: &Path,
-    app: &AppHandle,
-    cdp_url: Option<&str>,
-) -> Result<(), BrowserError> {
-    let cwd = app
-        .path()
-        .home_dir()
+fn set_connected_cdp_config(app: &AppHandle, cdp_url: Option<&str>) -> Result<(), BrowserError> {
+    let result = match cdp_url {
+        Some(url) => crate::config::set_value(app, "browser.cdpUrl", url),
+        None => crate::config::reset_value(app, "browser.cdpUrl"),
+    };
+    result
+        .map(|_| ())
         .map_err(|e| BrowserError::CdpConfigFailed {
             message: e.to_string(),
-        })?;
-    let mut args: Vec<&str> = vec!["config"];
-    match cdp_url {
-        Some(url) => args.extend(["set", "browser.cdpUrl", url]),
-        None => args.extend(["reset", "browser.cdpUrl"]),
-    }
-    let description = args.join(" ");
-    let output = Command::new(omp_path)
-        .args(&args)
-        .current_dir(&cwd)
-        .output()
-        .map_err(|e| BrowserError::CdpConfigFailed {
-            message: format!("failed to run {} {description}: {e}", omp_path.display()),
-        })?;
-    if !output.status.success() {
-        return Err(BrowserError::CdpConfigFailed {
-            message: format!(
-                "`omp {description}` exited with {}: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim(),
-            ),
-        });
-    }
-    Ok(())
+        })
 }
 
 /// Toggle Takeover for a project's Browser Pane. Two things change:
