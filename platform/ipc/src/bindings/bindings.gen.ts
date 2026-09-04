@@ -139,6 +139,16 @@ export const commands = {
 	 *  one CLI quirk on one of ~70 providers can never blank the section.
 	 */
 	authAccountsList: () => typedError<AuthAccount[], CliError>(__TAURI_INVOKE("auth_accounts_list")),
+	/**
+	 *  Log a provider out of omp's own credential store. There is no RPC
+	 *  equivalent (`login` exists on the rpc-ui protocol, `logout` does not),
+	 *  and unlike `login` this needs no OAuth round trip or running session —
+	 *  it's a direct credential-store mutation, always safe to shell out for.
+	 *  `omp auth-broker logout <id>` succeeds unconditionally (even for a
+	 *  provider with nothing stored), so this only ever fails via the usual
+	 *  `CliError` paths (binary unresolvable/unspawnable).
+	 */
+	authLogout: (providerId: string) => typedError<null, CliError>(__TAURI_INVOKE("auth_logout", { providerId })),
 };
 
 /** Events */

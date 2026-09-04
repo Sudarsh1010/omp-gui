@@ -1,12 +1,15 @@
 //! Accounts section bridge commands (issue #25): the provider catalog omp
-//! knows about (`omp auth-broker list --json`) and each provider's stored
+//! knows about (`omp auth-broker list --json`), each provider's stored
 //! OAuth accounts (`omp token <provider> --list`, run once per provider —
 //! the CLI has no single "list every stored account across every provider"
-//! call, see `parse_account_lines` below). Login/logout are deliberately
-//! not implemented here: they reuse the existing rpc-ui login pass-through
-//! (`platform/ipc/src/session/login.ts`, ADR-0009) on whichever session is
-//! active, never a shell-out — ADR-0009 rejects a second, app-owned
-//! credential path.
+//! call, see `parse_account_lines` below), and logging a provider out.
+//! Login is deliberately not implemented here: it reuses the existing
+//! rpc-ui login pass-through (`platform/ipc/src/session/login.ts`,
+//! ADR-0009) on whichever session is active — the RPC protocol has a
+//! `login` command but no `logout` one, so logout is the one Accounts
+//! action this crate shells out for directly (`omp auth-broker logout
+//! <provider>`, which needs no running session at all — it only touches
+//! the credential store).
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -106,4 +109,18 @@ pub fn auth_accounts_list(app: AppHandle) -> Result<Vec<AuthAccount>, CliError> 
         }
     }
     Ok(accounts)
+}
+
+/// Log a provider out of omp's own credential store. There is no RPC
+/// equivalent (`login` exists on the rpc-ui protocol, `logout` does not),
+/// and unlike `login` this needs no OAuth round trip or running session —
+/// it's a direct credential-store mutation, always safe to shell out for.
+/// `omp auth-broker logout <id>` succeeds unconditionally (even for a
+/// provider with nothing stored), so this only ever fails via the usual
+/// `CliError` paths (binary unresolvable/unspawnable).
+#[tauri::command]
+#[specta::specta]
+pub fn auth_logout(app: AppHandle, provider_id: String) -> Result<(), CliError> {
+    run_omp_cli(&app, &["auth-broker", "logout", &provider_id])?;
+    Ok(())
 }

@@ -25,6 +25,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             preferences::preferences_write,
             auth::auth_providers_list,
             auth::auth_accounts_list,
+            auth::auth_logout,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,
