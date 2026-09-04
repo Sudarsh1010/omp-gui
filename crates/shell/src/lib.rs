@@ -7,6 +7,7 @@ mod preferences;
 mod sessions;
 mod smoke;
 mod auth;
+mod models;
 /// The single specta builder shared by the runtime and the bindings export
 /// test, so the checked-in bindings can never drift from the live handler.
 fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
@@ -39,6 +40,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             auth::auth_providers_list,
             auth::auth_accounts_list,
             auth::auth_logout,
+            models::models_list,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,
