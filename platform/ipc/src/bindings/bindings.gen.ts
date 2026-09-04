@@ -123,6 +123,22 @@ export const commands = {
 	 *  doesn't know about, and return what is now on disk.
 	 */
 	preferencesWrite: (prefs: AppPreferences) => typedError<AppPreferences, PreferencesError>(__TAURI_INVOKE("preferences_write", { prefs })),
+	/**
+	 *  List every OAuth/credential provider omp knows about (Accounts section
+	 *  row set — one row per provider regardless of login state).
+	 */
+	authProvidersList: () => typedError<AuthProvider[], CliError>(__TAURI_INVOKE("auth_providers_list")),
+	/**
+	 *  List every stored OAuth account across every provider. `omp token` has
+	 *  no bulk-listing mode (`--list` requires a provider positional argument),
+	 *  so this calls it once per provider from the same `auth-broker list
+	 *  --json` catalog and aggregates; a provider with nothing stored (the
+	 *  common case — `token <provider> --list` exits non-zero with "No OAuth
+	 *  accounts found…") contributes no rows rather than failing the whole
+	 *  list. Only a failure to resolve/spawn the binary at all propagates, so
+	 *  one CLI quirk on one of ~70 providers can never blank the section.
+	 */
+	authAccountsList: () => typedError<AuthAccount[], CliError>(__TAURI_INVOKE("auth_accounts_list")),
 };
 
 /** Events */
@@ -154,6 +170,29 @@ export type AppPreferences = {
 	 *  back to `omp_start`'s own default (the user's home directory).
 	 */
 	defaultWorkingDirectory?: string | null,
+};
+
+/**
+ *  One stored OAuth account for a provider, parsed from `omp token
+ *  <provider> --list`'s text output (`"<position>. <identity>"` per line —
+ *  `token` has no `--json` flag). `position` is the 1-based index `omp
+ *  token <provider> --account <position>` expects.
+ */
+export type AuthAccount = {
+	providerId: string,
+	position: number,
+	identity: string,
+};
+
+/**
+ *  One OAuth/credential provider omp's auth broker knows about, exactly as
+ *  `omp auth-broker list --json` reports it (69 entries as of the pin this
+ *  was captured against — LLM providers, web-search providers, and local
+ *  OpenAI-compatible servers alike; not just chat-model providers).
+ */
+export type AuthProvider = {
+	id: string,
+	name: string,
 };
 
 /**  Errors returned from Shell Bridge commands. */
@@ -202,6 +241,25 @@ export type ChromiumInstallEvent = {
 };
 
 export type ChromiumInstallPhase = "resolving" | "downloading" | "extracting";
+
+/**
+ *  Errors returned from every omp-backed Shell Bridge command (`config`,
+ *  `auth-broker`/`token`, `models`) that shells out through
+ *  [`run_omp_cli`]/[`run_omp_json`]. `Unavailable` names the stage omp
+ *  itself could not be reached at (a per-section degrade trigger);
+ *  `Rejected` is omp's own error text for a request it understood but
+ *  refused — carried through to the UI verbatim, never rewritten.
+ */
+export type CliError = { type: "unavailable"; stage: CliStage; message: string } | { type: "rejected"; message: string };
+
+/**
+ *  The stage at which an `omp` CLI invocation failed to even produce a
+ *  result to validate — as opposed to `CliError::Rejected`, which is omp's
+ *  own validation/business-logic error for a request it fully understood.
+ *  `Exit` is reserved for a future caller distinguishing a clean non-zero
+ *  exit from a spawn/resolve failure; unconstructed here is expected.
+ */
+export type CliStage = "resolve" | "spawn" | "exit" | "parse";
 
 /**
  *  Result of probing whether a process outside this app currently has a

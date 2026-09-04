@@ -3,6 +3,8 @@ mod chromium_install;
 mod omp;
 mod preferences;
 mod sessions;
+mod auth;
+mod omp_cli;
 /// The single specta builder shared by the runtime and the bindings export
 /// test, so the checked-in bindings can never drift from the live handler.
 fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
@@ -21,6 +23,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             sessions::read_session_preview,
             preferences::preferences_read,
             preferences::preferences_write,
+            auth::auth_providers_list,
+            auth::auth_accounts_list,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,
