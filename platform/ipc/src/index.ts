@@ -166,3 +166,20 @@ export type { SchemaView, SchemaTabView, SchemaGroupView, SchemaRowView } from "
 
 export { buildSearchIndex, searchSettings } from "./settings/search-index";
 export type { SearchSource, SearchHit, SearchIndex } from "./settings/search-index";
+export {
+  addChainEntry,
+  addChainKey,
+  moveChainEntry,
+  removeChainKey,
+  setProviderLimit,
+  setToolPolicy,
+  validateLimit,
+} from "./settings/records";
+export type {
+  ChainEntryMove,
+  FallbackChainsRecord,
+  LimitValidation,
+  ProviderLimitsRecord,
+  ToolApprovalRecord,
+  ToolPolicy,
+} from "./settings/records";
