@@ -106,3 +106,15 @@ export type {
   AppPreferencesStatus,
 } from "./preferences/app-preferences";
 export type { AppPreferences, PreferencesError, Theme } from "./bindings/bindings.gen";
+
+export {
+  createAccountsController,
+  EMPTY_ACCOUNTS_SNAPSHOT,
+} from "./settings/accounts-controller";
+export type {
+  AccountRow,
+  AccountsController,
+  AccountsSnapshot,
+  AccountsStatus,
+} from "./settings/accounts-controller";
+export type { AuthProvider, AuthAccount, CliError, CliStage } from "./bindings/bindings.gen";

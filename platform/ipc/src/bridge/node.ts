@@ -17,6 +17,8 @@ import type {
   SessionPreview,
   SessionPreviewMessage,
   AppPreferences,
+  AuthProvider,
+  AuthAccount,
 } from "../bindings/bindings.gen";
 
 /** Mirrors `crates/shell/src/sessions.rs`'s scan window constants exactly,
@@ -273,9 +275,79 @@ interface Session {
  * default cwd. `preferencesPath` is the file the App Preferences seam test
  * (and controller test) point at — a bridge built without it simply has no
  * `preferencesRead`/`preferencesWrite` methods (both optional on
- * `ShellBridge`). */
+ * `ShellBridge`). `agentDir`, when set, becomes `PI_CODING_AGENT_DIR` for
+ * every process this bridge spawns (`start()`'s session subprocess and
+ * every `auth*` shell-out below) — the per-test hermetic isolation the
+ * Accounts seam test (`settings/accounts.test.ts`) needs without wrapping
+ * the whole test file in one process-level env var. Omitted, every spawn
+ * simply inherits `process.env` as before (additive, existing callers
+ * unaffected). */
 export interface NodeBridgeOptions {
   preferencesPath?: string;
+  agentDir?: string;
+}
+
+/** `process.env` overlaid with `options.agentDir` as `PI_CODING_AGENT_DIR`
+ * when set — the environment every process this bridge spawns runs with. */
+function spawnEnv(options: NodeBridgeOptions): NodeJS.ProcessEnv {
+  if (!options.agentDir) return process.env;
+  return { ...process.env, PI_CODING_AGENT_DIR: options.agentDir };
+}
+
+/** Runs `omp <args>` synchronously (these are quick, non-interactive CLI
+ * calls — `auth-broker list/logout`, `token --list` — never the long-lived
+ * `--mode rpc-ui` subprocess `start()` spawns), mirroring
+ * `crates/shell/src/omp_cli.rs`'s `run_omp_cli`: a non-zero exit surfaces
+ * omp's own stderr (falling back to stdout), trimmed, rather than Node's
+ * generic "Command failed" wrapper.
+ */
+function execOmp(
+  binaryPath: string,
+  args: string[],
+  execCwd: string,
+  options: NodeBridgeOptions,
+): string {
+  try {
+    return execFileSync(binaryPath, args, {
+      cwd: execCwd,
+      encoding: "utf8",
+      env: spawnEnv(options),
+      // Explicit, fully-piped stdio: `execFileSync`'s own default inherits
+      // stderr to the parent process — every "No OAuth accounts found for
+      // provider …" a provider-with-nothing-stored call writes would
+      // otherwise print straight to this bridge's own stderr (seam-test
+      // noise), instead of staying captured on the thrown error like the
+      // Rust side's `Command::output()` already does.
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    const failure = error as NodeJS.ErrnoException & {
+      stdout?: Buffer | string;
+      stderr?: Buffer | string;
+    };
+    const stderr = failure.stderr ? failure.stderr.toString() : "";
+    const stdout = failure.stdout ? failure.stdout.toString() : "";
+    throw new Error(stderr.trim() || stdout.trim() || failure.message);
+  }
+}
+
+/** Parses `omp token <provider> --list`'s stdout defensively, mirroring
+ * `auth.rs`'s `parse_account_lines`: one `"N. label"` line per stored
+ * account, any other line skipped rather than failing the whole parse. */
+function parseAccountLines(stdout: string, providerId: string): AuthAccount[] {
+  const accounts: AuthAccount[] = [];
+  for (const rawLine of stdout.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const dot = line.indexOf(".");
+    if (dot === -1) continue;
+    const position = Number.parseInt(line.slice(0, dot).trim(), 10);
+    if (!Number.isFinite(position)) continue;
+    const identity = line.slice(dot + 1).trim();
+    if (!identity) continue;
+    accounts.push({ providerId, position, identity });
+  }
+  return accounts;
 }
 
 export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeOptions = {}): ShellBridge {
@@ -300,10 +372,12 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
       const sessionId = randomUUID();
       const version = execFileSync(binaryPath, ["--version"], {
         encoding: "utf8",
+        env: spawnEnv(options),
       }).trim();
       const child = spawn(binaryPath, ["--mode", "rpc-ui"], {
         cwd: cwdOverride ?? cwd,
         stdio: ["pipe", "pipe", "inherit"],
+        env: spawnEnv(options),
       });
 
       if (!child.stdin || !child.stdout) {
@@ -410,5 +484,31 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
           preferencesWrite: (prefs: AppPreferences) => writePreferencesFile(preferencesPath, prefs),
         }
       : {}),
+
+    async authProvidersList(): Promise<AuthProvider[]> {
+      const stdout = execOmp(binaryPath, ["auth-broker", "list", "--json"], cwd, options);
+      return JSON.parse(stdout) as AuthProvider[];
+    },
+
+    async authAccountsList(): Promise<AuthAccount[]> {
+      const stdout = execOmp(binaryPath, ["auth-broker", "list", "--json"], cwd, options);
+      const providers = JSON.parse(stdout) as AuthProvider[];
+      const accounts: AuthAccount[] = [];
+      for (const provider of providers) {
+        try {
+          const listStdout = execOmp(binaryPath, ["token", provider.id, "--list"], cwd, options);
+          accounts.push(...parseAccountLines(listStdout, provider.id));
+        } catch {
+          // No accounts stored for this provider (or some other
+          // per-provider refusal) — not fatal to the aggregate list,
+          // mirroring `auth.rs`'s `auth_accounts_list`.
+        }
+      }
+      return accounts;
+    },
+
+    async authLogout(providerId: string): Promise<void> {
+      execOmp(binaryPath, ["auth-broker", "logout", providerId], cwd, options);
+    },
   };
 }

@@ -7,11 +7,12 @@
  * ModelsCatalogController` #27, `accounts?` #25).
  */
 import { createContext, useContext, type ReactNode } from "react";
-import type { AppPreferencesController, BrowserShellBridge } from "@omp-gui/ipc";
+import type { AccountsController, AppPreferencesController, BrowserShellBridge } from "@omp-gui/ipc";
 
 export interface SettingsContextValue {
   bridge: BrowserShellBridge;
   preferences: AppPreferencesController;
+  accounts?: AccountsController;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);

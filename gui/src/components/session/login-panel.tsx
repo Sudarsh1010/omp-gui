@@ -3,17 +3,16 @@
  * ADR-0009 "credentials are omp's, the app is a pass-through"). Lists
  * every OAuth provider `get_login_providers` returns with a "Log in"
  * action and a read-only "Logged in as…" line, and renders the `open_url`
- * `extension_ui_request` elicitation `login()` triggers using
- * `ApprovalInbox`'s own `ExtensionUiCard` chrome (T4, issue #5) rather
- * than a differently-styled one-off. The URL opens automatically via the
- * Tauri opener plugin, with a manual fallback button for when that
- * doesn't reach the user (a popup blocker, an accidentally-closed tab,
- * …). Any further interactive step a provider needs mid-flow (pasting a
- * redirect code back) rides the same session's `select`/`confirm`/
- * `input`/`editor` `extension_ui_request` frames `ApprovalInbox` already
- * renders and answers — nothing here duplicates that.
+ * `extension_ui_request` elicitation `login()` triggers via
+ * `login-elicitation.tsx`'s shared `LoginElicitationCard` (T25/#25 reuses
+ * the same card from the Settings Accounts section rather than a second,
+ * differently-styled one-off). Any further interactive step a provider
+ * needs mid-flow (pasting a redirect code back) rides the same session's
+ * `select`/`confirm`/`input`/`editor` `extension_ui_request` frames
+ * `ApprovalInbox` already renders and answers — nothing here duplicates
+ * that.
  */
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { LoginProvider, SessionsStore } from "@omp-gui/ipc";
 import { Badge } from "@omp-gui/ui/components/badge";
 import { Button } from "@omp-gui/ui/components/button";
@@ -35,15 +34,8 @@ import {
   PopoverTrigger,
 } from "@omp-gui/ui/components/popover";
 import { Spinner } from "@omp-gui/ui/components/spinner";
-import {
-  ArrowSquareOutIcon,
-  SignInIcon,
-  UserCircleCheckIcon,
-  UserCircleIcon,
-  XIcon,
-} from "@phosphor-icons/react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { ExtensionUiCard } from "@gui/components/session/approval-inbox";
+import { SignInIcon, UserCircleCheckIcon, UserCircleIcon } from "@phosphor-icons/react";
+import { LoginElicitationCard, useAutoOpenElicitation } from "@gui/components/session/login-elicitation";
 import { useLogin } from "@gui/session/use-login";
 
 export interface LoginPanelProps {
@@ -69,15 +61,8 @@ export function LoginPanel({ store, sessionId }: LoginPanelProps) {
   } = useLogin(store, sessionId);
 
   // Auto-open the sign-in page as soon as a new elicitation arrives,
-  // regardless of whether this popover happens to be open — `id` dedupes
-  // so a re-render never re-triggers the same one.
-  const openedElicitationId = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (elicitation && openedElicitationId.current !== elicitation.id) {
-      openedElicitationId.current = elicitation.id;
-      void openUrl(elicitation.launchUrl ?? elicitation.url);
-    }
-  }, [elicitation]);
+  // regardless of whether this popover happens to be open.
+  useAutoOpenElicitation(elicitation);
 
   function handleOpenChange(nextOpen: boolean): void {
     setOpen(nextOpen);
@@ -108,26 +93,7 @@ export function LoginPanel({ store, sessionId }: LoginPanelProps) {
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
 
         {elicitation ? (
-          <ExtensionUiCard
-            icon={ArrowSquareOutIcon}
-            title="Continue in your browser"
-            badgeLabel="Login"
-            description={elicitation.instructions}
-          >
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => void openUrl(elicitation.launchUrl ?? elicitation.url)}
-              >
-                <ArrowSquareOutIcon />
-                Open sign-in page
-              </Button>
-              <Button size="sm" variant="ghost" onClick={dismissElicitation}>
-                <XIcon />
-                Dismiss
-              </Button>
-            </div>
-          </ExtensionUiCard>
+          <LoginElicitationCard elicitation={elicitation} onDismiss={dismissElicitation} />
         ) : null}
 
         {loading && providers.length === 0 ? (
