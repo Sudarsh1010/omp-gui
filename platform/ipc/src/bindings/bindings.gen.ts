@@ -13,8 +13,10 @@ export const commands = {
 	 *  cwd of a session they are about to resume so omp's `switch_session` guard
 	 *  (which refuses a resume whose recorded cwd differs from the live process
 	 *  cwd, since the rpc-ui protocol has no cwd-change opt-in) accepts it.
-	 *  Falls back to the user's home directory when omitted, empty, or naming a
-	 *  path that is not an existing directory.
+	 *  When omitted, empty, or naming a path that is not an existing directory
+	 *  (a fresh session), falls back to the App Preferences
+	 *  `defaultWorkingDirectory` (#22) when that names an existing directory,
+	 *  else the user's home directory — see `resolve_start_cwd`.
 	 */
 	ompStart: (cwd: string | null) => typedError<OmpStartInfo, BridgeError>(__TAURI_INVOKE("omp_start", { cwd })),
 	/**  Write one NDJSON command line to the subprocess's stdin. */
@@ -123,6 +125,22 @@ export const commands = {
 	 *  doesn't know about, and return what is now on disk.
 	 */
 	preferencesWrite: (prefs: AppPreferences) => typedError<AppPreferences, PreferencesError>(__TAURI_INVOKE("preferences_write", { prefs })),
+	/**
+	 *  The effective default working directory and Chromium executable a
+	 *  fresh session / Browser Pane launch would actually use right now, plus
+	 *  where each came from (#22, issue #19 story: "Both rows show the
+	 *  effective value and where it came from"). Reuses `omp::resolve_start_cwd`
+	 *  and `browser::resolve_chromium_source` — the exact functions
+	 *  `omp_start`/`browser_launch` themselves call — so this can never drift
+	 *  from what a real spawn would do.
+	 */
+	preferencesEffective: () => typedError<EffectivePreferences, PreferencesError>(__TAURI_INVOKE("preferences_effective")),
+	/**
+	 *  Probe an arbitrary filesystem path for the working-directory row (needs
+	 *  `isDir`) and the Chromium-path row (needs `isExecutable`) to validate
+	 *  on blur/Enter before writing it to the preferences file.
+	 */
+	pathProbe: (path: string) => __TAURI_INVOKE<PathProbe>("path_probe", { path }),
 };
 
 /** Events */
@@ -204,6 +222,52 @@ export type ChromiumInstallEvent = {
 export type ChromiumInstallPhase = "resolving" | "downloading" | "extracting";
 
 /**
+ *  Where `preferences_effective`'s Chromium value came from — the
+ *  specta-typed mirror of `browser::ChromiumSource`.
+ */
+export type ChromiumPathSource = 
+/**  `OMP_GUI_CHROMIUM_PATH` or `PUPPETEER_EXECUTABLE_PATH`. */
+"env" | 
+/**  The App Preferences `chromiumPath` (#22). */
+"preference" | 
+/**  A `@puppeteer/browsers`-managed cache scan. */
+"cache" | 
+/**  Nothing resolved. */
+"none";
+
+export type EffectiveChromiumPath = {
+	/**
+	 *  The Chromium executable the Browser Pane would actually launch, or
+	 *  `None` when nothing resolved anywhere.
+	 */
+	value: string | null,
+	source: ChromiumPathSource,
+	/**
+	 *  The primary override env var's name (`browser.rs`'s
+	 *  `CHROMIUM_OVERRIDE_ENV`), for the row's description text — never a
+	 *  second, driftable copy of the string.
+	 */
+	envVar: string,
+};
+
+export type EffectivePreferences = {
+	workingDirectory: EffectiveWorkingDirectory,
+	chromium: EffectiveChromiumPath,
+};
+
+export type EffectiveWorkingDirectory = {
+	/**  The directory a fresh session would actually spawn into. */
+	value: string,
+	source: WorkingDirectorySource,
+	/**
+	 *  The raw, unresolved `defaultWorkingDirectory` preference (even when
+	 *  it no longer names an existing directory), so the Settings row can
+	 *  show the user what they set alongside the effective value.
+	 */
+	preferred: string | null,
+};
+
+/**
  *  Result of probing whether a process outside this app currently has a
  *  session file open (best-effort; see module doc).
  */
@@ -241,8 +305,26 @@ export type OmpStartInfo = {
 	source: OmpBinarySource,
 };
 
+/**
+ *  Filesystem facts about `path`, for the working-directory/Chromium-path
+ *  rows (#22) to validate an edit inline before committing it — a
+ *  directory picker's escape hatch, since no Tauri dialog plugin is wired
+ *  in yet (`01-shell-bridge.md`). Deliberately infallible: a bad or
+ *  missing path is information for the caller to render, not an error.
+ */
+export type PathProbe = {
+	exists: boolean,
+	isDir: boolean,
+	isExecutable: boolean,
+};
+
 /**  Errors returned from App Preferences Shell Bridge commands. */
-export type PreferencesError = { type: "writeFailed"; message: string };
+export type PreferencesError = { type: "writeFailed"; message: string } | 
+/**
+ *  `preferences_effective` (#22) could not resolve the user's home
+ *  directory, the last-resort fallback for the working-directory row.
+ */
+{ type: "homeDirUnavailable"; message: string };
 
 /**
  *  Info the frontend needs to reflect the Relay toggle's state — the
@@ -348,6 +430,23 @@ export type SessionsError =
  *  `prefers-color-scheme` live; `Light`/`Dark` pin one palette.
  */
 export type Theme = "system" | "light" | "dark";
+
+/**
+ *  Where `preferences_effective`'s working-directory value came from —
+ *  the specta-typed mirror of `omp::StartCwdSource`'s non-`Requested`
+ *  variants (a fresh session, which is what this command describes, never
+ *  has a `requested` resume cwd).
+ */
+export type WorkingDirectorySource = 
+/**
+ *  The App Preferences `defaultWorkingDirectory` named an existing
+ *  directory.
+ */
+"preference" | 
+/**  No preference was set at all. */
+"home" | 
+/**  A preference was set but no longer names an existing directory. */
+"fallback";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
