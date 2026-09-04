@@ -117,7 +117,7 @@ export function ChromiumPathRow() {
         />
         {effective && (
           <span
-            className="max-w-64 truncate font-mono text-[10px] text-muted-foreground"
+            className="max-w-64 truncate font-mono text-[11px] text-muted-foreground"
             title={effectiveCaption(effective)}
           >
             {effectiveCaption(effective)}

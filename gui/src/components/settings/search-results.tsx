@@ -92,7 +92,7 @@ export function SearchResults({ hits, query, onNavigate }: SearchResultsProps) {
                 </span>
               )}
               {hit.keyPath && (
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
                   {hit.keyPath}
                 </span>
               )}

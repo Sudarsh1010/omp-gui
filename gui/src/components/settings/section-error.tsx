@@ -31,7 +31,7 @@ export function SectionError({
       <WarningCircleIcon />
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>
-        {stage && <span className="font-mono text-[10px] text-muted-foreground">{stage}: </span>}
+        {stage && <span className="font-mono text-[11px] text-muted-foreground">{stage}: </span>}
         {message}
       </AlertDescription>
       {(onUseBundled || onOpenAppPreferences) && (

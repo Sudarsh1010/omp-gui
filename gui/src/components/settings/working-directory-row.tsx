@@ -106,7 +106,7 @@ export function WorkingDirectoryRow() {
           }}
         />
         {effective && (
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-[11px] text-muted-foreground">
             {effectiveCaption(effective)}
           </span>
         )}
