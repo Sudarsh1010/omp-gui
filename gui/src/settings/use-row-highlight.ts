@@ -27,7 +27,7 @@ export function useRowHighlight(rowKey: string): boolean {
       return typeof value === "string" ? value : undefined;
     },
   });
-  const navigate = useNavigate({ from: "/settings" });
+  const navigate = useNavigate();
   const [pulsing, setPulsing] = useState(false);
 
   useEffect(() => {
@@ -35,7 +35,11 @@ export function useRowHighlight(rowKey: string): boolean {
     document.getElementById(`row-${rowKey}`)?.scrollIntoView({ block: "center" });
     setPulsing(true);
     const timeout = window.setTimeout(() => setPulsing(false), PULSE_MS);
+    // `to: "."` keeps the current section: a `from`-anchored navigate with
+    // only `search` would target `/settings` itself, whose index route
+    // bounces to App Preferences.
     void navigate({
+      to: ".",
       search: (prev: Record<string, unknown>) => ({ ...prev, row: undefined }),
       replace: true,
     });

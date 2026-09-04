@@ -14,6 +14,7 @@
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import type { SearchHit } from "@omp-gui/ipc";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@omp-gui/ui/components/empty";
+import { Button } from "@omp-gui/ui/components/button";
 import { SettingsGroup } from "./settings-group";
 
 export interface SearchResultsProps {
@@ -66,20 +67,20 @@ export function SearchResults({ hits, query, onNavigate }: SearchResultsProps) {
       {groupHits(hits).map((group) => (
         <SettingsGroup key={group.key} title={group.title}>
           {group.hits.map((hit) => (
-            <button
+            <Button
               key={hit.rowKey}
-              type="button"
+              variant="ghost"
               onClick={() => onNavigate(hit)}
-              className="flex h-8 w-full min-w-0 items-center justify-between gap-3 px-3 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+              className="h-8 w-full min-w-0 justify-between gap-3 px-3 font-normal"
             >
-              <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{hit.label}</span>
+              <span className="max-w-[45%] shrink-0 truncate text-xs font-medium text-foreground">{hit.label}</span>
               {hit.description && (
-                <span className="min-w-0 flex-[2] truncate text-xs text-muted-foreground">{hit.description}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{hit.description}</span>
               )}
               {hit.keyPath && (
                 <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{hit.keyPath}</span>
               )}
-            </button>
+            </Button>
           ))}
         </SettingsGroup>
       ))}
