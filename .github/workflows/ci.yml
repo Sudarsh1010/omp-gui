@@ -86,5 +86,8 @@ jobs:
       - name: gui typecheck
         run: pnpm --filter gui exec tsc --noEmit
 
+      - name: Fetch pinned omp binary (smoke.rs tests run it)
+        run: node scripts/fetch-omp.mjs
+
       - name: cargo test (shell crate)
         run: cargo test -p shell
