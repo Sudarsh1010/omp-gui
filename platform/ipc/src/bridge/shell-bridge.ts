@@ -11,6 +11,8 @@ import type {
   ForeignLockProbe,
   SessionPreview,
   ChromiumInstallEvent,
+  AppPreferences,
+  PreferencesError,
 } from "../bindings/bindings.gen";
 
 export type {
@@ -25,6 +27,8 @@ export type {
   ForeignLockProbe,
   SessionPreview,
   ChromiumInstallEvent,
+  AppPreferences,
+  PreferencesError,
 };
 
 export interface ShellBridge {
@@ -104,6 +108,20 @@ export interface ShellBridge {
   browserInstallChromium?(): Promise<string>;
   /** Subscribe to `browserInstallChromium` progress events. */
   onChromiumInstallProgress?(handler: (e: ChromiumInstallEvent) => void): () => void;
+  /**
+   * Read the app-owned App Preferences file (theme, omp/Chromium path
+   * overrides, default working directory) — always available, even when
+   * omp itself is unreachable (ADR-0011). Optional: `nodeBridge` only
+   * implements it when constructed with a `preferencesPath` option, since
+   * most seam tests don't exercise App Preferences at all.
+   */
+  preferencesRead?(): Promise<AppPreferences>;
+  /**
+   * Write the App Preferences file, preserving any keys this app version
+   * doesn't know about, and return what is now on disk. Optional for the
+   * same reason as `preferencesRead`.
+   */
+  preferencesWrite?(prefs: AppPreferences): Promise<AppPreferences>;
 }
 
 /**

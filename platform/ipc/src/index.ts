@@ -94,3 +94,15 @@ export type {
   LoginSnapshot,
   OAuthUrlElicitation,
 } from "./session/login";
+
+export {
+  createAppPreferencesController,
+  DEFAULT_APP_PREFERENCES,
+  EMPTY_APP_PREFERENCES_SNAPSHOT,
+} from "./preferences/app-preferences";
+export type {
+  AppPreferencesController,
+  AppPreferencesSnapshot,
+  AppPreferencesStatus,
+} from "./preferences/app-preferences";
+export type { AppPreferences, PreferencesError, Theme } from "./bindings/bindings.gen";
