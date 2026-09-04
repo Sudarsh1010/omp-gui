@@ -25,14 +25,19 @@ export const commands = {
 	ompKill: (sessionId: string) => typedError<null, BridgeError>(__TAURI_INVOKE("omp_kill", { sessionId })),
 	/**
 	 *  Launch (or, if this project already has one running, attach to) the
-	 *  per-project Browser Pane Chromium.
+	 *  per-project Browser Pane Chromium. Runs on a blocking pool thread
+	 *  (`crate::omp_cli::blocking`), not Tauri's main thread — the Chromium
+	 *  spawn, DevTools-banner wait, and best-effort omp config write here are
+	 *  all synchronous I/O.
 	 */
 	browserLaunch: (projectPath: string) => typedError<BrowserInfo, BrowserError>(__TAURI_INVOKE("browser_launch", { projectPath })),
 	/**
 	 *  Release this caller's interest in a project's Browser Pane. The Chromium
 	 *  keeps running (and its persistent profile keeps existing) until every
 	 *  caller has released it — mirroring omp's own connected-URL refcount
-	 *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
+	 *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down. Runs
+	 *  on a blocking pool thread (`crate::omp_cli::blocking`), matching
+	 *  `browser_launch`.
 	 */
 	browserStop: (projectPath: string) => typedError<null, BrowserError>(__TAURI_INVOKE("browser_stop", { projectPath })),
 	/**
@@ -52,6 +57,8 @@ export const commands = {
 	 *  same, already-accepted gap `set_connected_cdp_config` documents for T9's
 	 *  `connected` CDP URL. `sessionId` is accepted now so every call site is
 	 *  ready the moment a per-running-session config lever exists.
+	 *  Runs on a blocking pool thread (`crate::omp_cli::blocking`), matching
+	 *  `browser_launch`/`browser_stop`.
 	 */
 	browserSetRelay: (sessionId: string, enabled: boolean) => typedError<RelayInfo, BrowserError>(__TAURI_INVOKE("browser_set_relay", { sessionId, enabled })),
 	/**
@@ -367,13 +374,11 @@ export type CliError =
 { type: "rejected"; message: string };
 
 /**
- *  Which step of an omp CLI shell-out failed. `Exit` is part of the
- *  contract shape (mirrored by the smoke-test routine's own stage enum,
- *  #23) even though `run_omp_cli` itself never constructs it — a non-zero
- *  exit is always `CliError::Rejected`, omp's own validation speaking,
- *  never a transport-stage failure.
+ *  Which step of an omp CLI shell-out failed. A non-zero exit is always
+ *  `CliError::Rejected`, omp's own validation speaking, never a
+ *  transport-stage failure.
  */
-export type CliStage = "resolve" | "spawn" | "exit" | "parse";
+export type CliStage = "resolve" | "spawn" | "parse";
 
 /**
  *  One entry from `omp config list --json`, keyed by dotted setting path

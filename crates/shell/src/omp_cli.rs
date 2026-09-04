@@ -28,24 +28,16 @@ use tauri::{AppHandle, Manager};
 /// Raw result of one `run_omp_cli` invocation.
 pub(crate) struct CliOutput {
     pub stdout: String,
-    #[allow(dead_code)]
-    pub stderr: String,
-    #[allow(dead_code)]
-    pub status: i32,
 }
 
-/// Which step of an omp CLI shell-out failed. `Exit` is part of the
-/// contract shape (mirrored by the smoke-test routine's own stage enum,
-/// #23) even though `run_omp_cli` itself never constructs it — a non-zero
-/// exit is always `CliError::Rejected`, omp's own validation speaking,
-/// never a transport-stage failure.
+/// Which step of an omp CLI shell-out failed. A non-zero exit is always
+/// `CliError::Rejected`, omp's own validation speaking, never a
+/// transport-stage failure.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum CliStage {
     Resolve,
     Spawn,
-    #[allow(dead_code)]
-    Exit,
     Parse,
 }
 
@@ -141,11 +133,7 @@ pub(crate) fn run_omp_cli(app: &AppHandle, args: &[&str]) -> Result<CliOutput, C
             message: message.to_string(),
         });
     }
-    Ok(CliOutput {
-        stdout,
-        stderr,
-        status: output.status.code().unwrap_or(-1),
-    })
+    Ok(CliOutput { stdout })
 }
 
 /// `run_omp_cli`, then parses `stdout` as JSON into `T`. A parse failure —
