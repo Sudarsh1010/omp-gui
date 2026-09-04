@@ -8,9 +8,16 @@
  * directly): this file is specifically about the bridge method a GUI row
  * or a future node-only caller would call.
  */
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import { nodeBridge } from "./node";
+
+const pin = JSON.parse(
+  readFileSync(join(import.meta.dirname, "../../../../omp-pin.json"), "utf8"),
+) as {
+  version: string;
+};
 
 const binary =
   process.env.OMP_GUI_OMP_PATH ??
@@ -20,7 +27,7 @@ describe("nodeBridge().ompSmokeTest against the pinned omp binary", () => {
   it("passes and reports the pinned version", async () => {
     const bridge = nodeBridge(binary, process.cwd());
     const report = await bridge.ompSmokeTest?.(binary);
-    expect(report?.version).toContain("18.1.10");
+    expect(report?.version).toContain(pin.version);
   }, 30_000);
 
   it("fails at a named stage for a non-omp executable", async () => {

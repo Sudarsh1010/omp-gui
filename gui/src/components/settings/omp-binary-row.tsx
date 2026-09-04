@@ -208,7 +208,7 @@ export function OmpBinaryRow() {
             <Input
               value={draftPath}
               onChange={(event) => setDraftPath(event.target.value)}
-              placeholder={`Bundled (${info?.bundledVersion ?? "18.1.10"})`}
+              placeholder={info?.bundledVersion ? `Bundled (${info.bundledVersion})` : "Bundled"}
               className="font-mono text-[11px]"
               disabled={running}
             />
