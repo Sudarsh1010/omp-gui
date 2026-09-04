@@ -10,12 +10,16 @@ import { ThemeRow } from "./theme-row";
 import { WorkingDirectoryRow } from "./working-directory-row";
 import { ChromiumPathRow } from "./chromium-path-row";
 import { SessionsNote } from "./sessions-note";
+import { OmpBinaryRow } from "./omp-binary-row";
 
 export function AppPreferencesSection() {
   return (
     <>
       <SettingsGroup title="Appearance">
         <ThemeRow />
+      </SettingsGroup>
+      <SettingsGroup title="omp">
+        <OmpBinaryRow />
       </SettingsGroup>
       <SettingsGroup title="Sessions">
         <WorkingDirectoryRow />

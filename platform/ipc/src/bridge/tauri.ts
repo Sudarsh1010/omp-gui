@@ -37,6 +37,10 @@ export function tauriBridge(): BrowserShellBridge {
     preferencesWrite: (prefs) => commands.preferencesWrite(prefs).then(unwrap),
     preferencesEffective: () => commands.preferencesEffective().then(unwrap),
     pathProbe: (path) => commands.pathProbe(path),
+    ompBinaryInfo: () => commands.ompBinaryInfo(),
+    ompSmokeTest: (path) => commands.ompSmokeTest(path).then(unwrap),
+    ompOverrideCommit: (path) => commands.ompOverrideCommit(path).then(unwrap),
+    ompOverrideClear: () => commands.ompOverrideClear(),
   };
 }
 /** Events expose listen() as Promise<unlisten>; bridge handlers need a sync unsubscribe. */
