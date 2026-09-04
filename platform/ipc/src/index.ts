@@ -141,3 +141,20 @@ export type {
   AccountsStatus,
 } from "./settings/accounts-controller";
 export type { AuthProvider, AuthAccount } from "./bindings/bindings.gen";
+
+export {
+  createModelsCatalogController,
+  EMPTY_MODELS_CATALOG_SNAPSHOT,
+  ENABLED_MODELS_EMPTY_MEANS_ALL,
+} from "./settings/models-catalog";
+export type {
+  CatalogModelCost,
+  CatalogModelRow,
+  CatalogProviderRow,
+  ModelRole,
+  ModelRoleAssignment,
+  ModelsCatalogController,
+  ModelsCatalogSnapshot,
+  ModelsCatalogStatus,
+} from "./settings/models-catalog";
+export type { ModelEntry, ModelsCatalog } from "./bindings/bindings.gen";
