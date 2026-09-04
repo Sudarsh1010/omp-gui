@@ -4,12 +4,12 @@
 //! persistent `--user-data-dir` and an ephemeral `--remote-debugging-port`.
 //! omp's builtin browser tool attaches to that same port via its existing
 //! `connected`-kind CDP path (notes/browser.md §2, §9). On launch this
-//! module hands omp that URL itself via `omp config set browser.cdpUrl`
+//! module hands omp that URL itself via `config::set_value`/`reset_value`
 //! (`set_connected_cdp_config`, defined just after `browser_stop` below),
 //! and resets it once the project's last interested party stops the
-//! browser — the same short-lived-CLI-invocation lever `set_relay_config`
-//! (near the bottom of this file) uses for `browser.relay`, sharing its
-//! accepted gap: an omp session only reads config at its own startup (see
+//! browser — the same config-bridge lever `browser_set_relay` (near the
+//! bottom of this file) uses for `browser.relay`, sharing its accepted
+//! gap: an omp session only reads config at its own startup (see
 //! `set_connected_cdp_config`'s doc comment).
 //!
 //! Separately, this module runs its *own* second CDP client (flatten-mode,
@@ -412,8 +412,9 @@ pub fn browser_stop(
 /// `connected`-kind CDP path (notes/browser.md §2, §9) can attach —
 /// `browser.cdpUrl` (`config/settings-schema.ts:4509-4519`; omp's settings
 /// resolution checks `browser.relay` *before* this key, so an enabled relay
-/// still wins). Mirrors `set_relay_config`'s `omp config set|reset` shape
-/// and its doc comment in full: this is a short-lived CLI invocation of the
+/// still wins). Mirrors `browser_set_relay`'s `config::set_value`/
+/// `reset_value` shape and its doc comment in full: this is a short-lived
+/// CLI invocation of the
 /// pinned binary, not an RPC call into a running `--mode rpc-ui` session,
 /// so a session already running when a Browser Pane launches or stops
 /// keeps whichever CDP config (or none) it resolved at its own startup —
@@ -970,7 +971,7 @@ async fn serve_frame_client(
 // })` path (notes/browser.md §2) works against it unchanged; the piece this
 // module actually owns is standing that server up (a plain `omp
 // browser-relay` subprocess — the same CLI surface a user could run by
-// hand) and, per `set_relay_config`'s doc comment, the persisted config
+// hand) and, per `browser_set_relay`'s doc comment, the persisted config
 // that makes an omp session pick relay mode at all.
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1051,7 +1052,7 @@ impl Drop for RelayDaemon {
 /// if this app spawned the daemon, it is torn down (`RelayDaemon::drop`).
 ///
 /// omp has no RPC command for mutating a *running* session's settings (see
-/// `set_relay_config`'s doc comment), so a session already streaming when
+/// `browser_set_relay`'s doc comment), so a session already streaming when
 /// this is called keeps whatever kind it resolved at its own startup — the
 /// same, already-accepted gap `set_connected_cdp_config` documents for T9's
 /// `connected` CDP URL. `sessionId` is accepted now so every call site is
