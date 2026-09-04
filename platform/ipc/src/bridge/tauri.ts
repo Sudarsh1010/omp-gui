@@ -48,6 +48,11 @@ export function tauriBridge(): BrowserShellBridge {
       await commands.configUnset(key).then(unwrap);
     },
     configSchema: () => commands.configSchema().then(unwrap),
+    authProvidersList: () => commands.authProvidersList().then(unwrap),
+    authAccountsList: () => commands.authAccountsList().then(unwrap),
+    authLogout: async (providerId) => {
+      await commands.authLogout(providerId).then(unwrap);
+    },
   };
 }
 /** Events expose listen() as Promise<unlisten>; bridge handlers need a sync unsubscribe. */

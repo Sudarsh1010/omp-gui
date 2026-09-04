@@ -198,6 +198,32 @@ export const commands = {
 	 *  section to Advanced-only, per ADR-0011's fallback paragraph.
 	 */
 	configSchema: () => typedError<ConfigSchema, CliError>(__TAURI_INVOKE("config_schema")),
+	/**
+	 *  List every OAuth/credential provider omp knows about (Accounts section
+	 *  row set — one row per provider regardless of login state).
+	 */
+	authProvidersList: () => typedError<AuthProvider[], CliError>(__TAURI_INVOKE("auth_providers_list")),
+	/**
+	 *  List every stored OAuth account across every provider. `omp token` has
+	 *  no bulk-listing mode (`--list` requires a provider positional argument),
+	 *  so this calls it once per provider from the same `auth-broker list
+	 *  --json` catalog and aggregates; a provider with nothing stored (the
+	 *  common case — `token <provider> --list` exits non-zero with "No OAuth
+	 *  accounts found…") contributes no rows rather than failing the whole
+	 *  list. Only a failure to resolve/spawn the binary at all propagates, so
+	 *  one CLI quirk on one of ~70 providers can never blank the section.
+	 */
+	authAccountsList: () => typedError<AuthAccount[], CliError>(__TAURI_INVOKE("auth_accounts_list")),
+	/**
+	 *  Log a provider out of omp's own credential store. There is no RPC
+	 *  equivalent (`login` exists on the rpc-ui protocol, `logout` does not),
+	 *  and unlike `login` this needs no OAuth round trip or running session —
+	 *  it's a direct credential-store mutation, always safe to shell out for.
+	 *  `omp auth-broker logout <id>` succeeds unconditionally (even for a
+	 *  provider with nothing stored), so this only ever fails via the usual
+	 *  `CliError` paths (binary unresolvable/unspawnable).
+	 */
+	authLogout: (providerId: string) => typedError<null, CliError>(__TAURI_INVOKE("auth_logout", { providerId })),
 };
 
 /** Events */
@@ -229,6 +255,29 @@ export type AppPreferences = {
 	 *  back to `omp_start`'s own default (the user's home directory).
 	 */
 	defaultWorkingDirectory?: string | null,
+};
+
+/**
+ *  One stored OAuth account for a provider, parsed from `omp token
+ *  <provider> --list`'s text output (`"<position>. <identity>"` per line —
+ *  `token` has no `--json` flag). `position` is the 1-based index `omp
+ *  token <provider> --account <position>` expects.
+ */
+export type AuthAccount = {
+	providerId: string,
+	position: number,
+	identity: string,
+};
+
+/**
+ *  One OAuth/credential provider omp's auth broker knows about, exactly as
+ *  `omp auth-broker list --json` reports it (69 entries as of the pin this
+ *  was captured against — LLM providers, web-search providers, and local
+ *  OpenAI-compatible servers alike; not just chat-model providers).
+ */
+export type AuthProvider = {
+	id: string,
+	name: string,
 };
 
 /**  Errors returned from Shell Bridge commands. */

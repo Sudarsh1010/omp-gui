@@ -22,4 +22,5 @@ export interface SettingsSection {
 
 export const STATIC_SECTIONS: SettingsSection[] = [
   { id: "app-preferences", label: "App Preferences", to: "/settings/app-preferences", group: "app" },
+  { id: "accounts", label: "Accounts", to: "/settings/accounts", group: "bespoke" },
 ];

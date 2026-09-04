@@ -23,6 +23,8 @@ import type {
   SmokeStage,
   ConfigEntry,
   ConfigSchema,
+  AuthProvider,
+  AuthAccount,
   CliError,
 } from "../bindings/bindings.gen";
 
@@ -50,6 +52,8 @@ export type {
   SmokeStage,
   ConfigEntry,
   ConfigSchema,
+  AuthProvider,
+  AuthAccount,
   CliError,
 };
 
@@ -223,6 +227,28 @@ export interface ShellBridge {
    * degrade to an Advanced-only view built from `configList()` alone.
    */
   configSchema?(): Promise<ConfigSchema>;
+  /**
+   * List every OAuth/credential provider omp's auth broker knows about
+   * (Accounts section row set — one row per provider regardless of login
+   * state). Optional for the same reason as `preferencesRead`: only the
+   * real Tauri shell and a `nodeBridge` built for the Settings seam
+   * implement it.
+   */
+  authProvidersList?(): Promise<AuthProvider[]>;
+  /**
+   * List every stored OAuth account across every provider (`omp token
+   * <provider> --list`, run once per provider — see `crates/shell/src/
+   * auth.rs`'s doc comment for why there is no bulk-listing call).
+   */
+  authAccountsList?(): Promise<AuthAccount[]>;
+  /**
+   * Log a provider out of omp's own credential store. Unlike login (which
+   * rides the existing rpc-ui pass-through on a live session,
+   * `session/login.ts`), logout has no RPC equivalent and needs no
+   * running session — it shells out to `omp auth-broker logout <provider>`
+   * directly.
+   */
+  authLogout?(providerId: string): Promise<void>;
 }
 
 /**

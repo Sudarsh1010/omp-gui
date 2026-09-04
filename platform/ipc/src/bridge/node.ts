@@ -24,6 +24,8 @@ import type {
   ConfigEntry,
   ConfigSchema,
   CliError,
+  AuthProvider,
+  AuthAccount,
 } from "../bindings/bindings.gen";
 
 /** Mirrors `crates/shell/src/sessions.rs`'s scan window constants exactly,
@@ -589,6 +591,25 @@ async function isExistingDirectory(path: string): Promise<boolean> {
   }
 }
 
+/** Parses `omp token <provider> --list`'s stdout defensively, mirroring
+ * `auth.rs`'s `parse_account_lines`: one `"N. label"` line per stored
+ * account, any other line skipped rather than failing the whole parse. */
+function parseAccountLines(stdout: string, providerId: string): AuthAccount[] {
+  const accounts: AuthAccount[] = [];
+  for (const rawLine of stdout.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const dot = line.indexOf(".");
+    if (dot === -1) continue;
+    const position = Number.parseInt(line.slice(0, dot).trim(), 10);
+    if (!Number.isFinite(position)) continue;
+    const identity = line.slice(dot + 1).trim();
+    if (!identity) continue;
+    accounts.push({ providerId, position, identity });
+  }
+  return accounts;
+}
+
 export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeOptions = {}): ShellBridge {
   const sessions = new Map<string, Session>();
   const frameHandlers = new Set<(e: OmpFrameEvent) => void>();
@@ -741,5 +762,25 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
       await runOmpCli(binaryPath, ["config", "unset", key, "--json"], agentDir);
     },
     configSchema: () => runOmpJson<ConfigSchema>(binaryPath, ["config", "schema", "--json"], agentDir),
+    authProvidersList: () =>
+      runOmpJson<AuthProvider[]>(binaryPath, ["auth-broker", "list", "--json"], agentDir),
+    async authAccountsList(): Promise<AuthAccount[]> {
+      const providers = await runOmpJson<AuthProvider[]>(binaryPath, ["auth-broker", "list", "--json"], agentDir);
+      const accounts: AuthAccount[] = [];
+      for (const provider of providers) {
+        try {
+          const { stdout } = await runOmpCli(binaryPath, ["token", provider.id, "--list"], agentDir);
+          accounts.push(...parseAccountLines(stdout, provider.id));
+        } catch {
+          // No accounts stored for this provider (or some other
+          // per-provider refusal) — not fatal to the aggregate list,
+          // mirroring `auth.rs`'s `auth_accounts_list`.
+        }
+      }
+      return accounts;
+    },
+    async authLogout(providerId: string): Promise<void> {
+      await runOmpCli(binaryPath, ["auth-broker", "logout", providerId], agentDir);
+    },
   };
 }

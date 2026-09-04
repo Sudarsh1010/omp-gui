@@ -129,3 +129,15 @@ export type {
 } from "./settings/settings-controller";
 export { serializeConfigValue } from "./settings/serialize";
 export type { ConfigEntry, ConfigSchema, SchemaTab, SchemaEntry, SchemaCondition, JsonValue, CliError, CliStage } from "./bindings/bindings.gen";
+
+export {
+  createAccountsController,
+  EMPTY_ACCOUNTS_SNAPSHOT,
+} from "./settings/accounts-controller";
+export type {
+  AccountRow,
+  AccountsController,
+  AccountsSnapshot,
+  AccountsStatus,
+} from "./settings/accounts-controller";
+export type { AuthProvider, AuthAccount } from "./bindings/bindings.gen";
