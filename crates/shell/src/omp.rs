@@ -407,7 +407,10 @@ fn cached_version(cache: &OmpVersionCache, path: &Path) -> Option<String> {
 }
 
 fn remember_version(cache: &OmpVersionCache, path: &Path, version: &str) {
-    cache.0.lock().insert(path.to_string_lossy().into_owned(), version.to_string());
+    cache
+        .0
+        .lock()
+        .insert(path.to_string_lossy().into_owned(), version.to_string());
 }
 
 fn env_override_active() -> bool {
@@ -451,11 +454,16 @@ pub enum OmpOverrideError {
 /// always-available section down with it.
 #[tauri::command]
 #[specta::specta]
-pub fn omp_binary_info(app: AppHandle, cache: State<'_, OmpVersionCache>) -> OmpBinaryInfo {
+pub async fn omp_binary_info(app: AppHandle) -> OmpBinaryInfo {
+    crate::omp_cli::blocking(move || binary_info(&app)).await
+}
+
+fn binary_info(app: &AppHandle) -> OmpBinaryInfo {
+    let cache = app.state::<OmpVersionCache>();
     let env_override_active = env_override_active();
     let bundled_version = pinned_version();
 
-    match resolve_omp_path(&app) {
+    match resolve_omp_path(app) {
         Ok((path, source)) => OmpBinaryInfo {
             version: cached_version(&cache, &path),
             path: path.display().to_string(),
@@ -465,8 +473,11 @@ pub fn omp_binary_info(app: AppHandle, cache: State<'_, OmpVersionCache>) -> Omp
         },
         Err(_) => {
             let (path, source) = if env_override_active {
-                (std::env::var(OVERRIDE_ENV).unwrap_or_default(), OmpBinarySource::Override)
-            } else if let Some(raw) = preferences::load_preferences(&app).omp_path {
+                (
+                    std::env::var(OVERRIDE_ENV).unwrap_or_default(),
+                    OmpBinarySource::Override,
+                )
+            } else if let Some(raw) = preferences::load_preferences(app).omp_path {
                 (raw, OmpBinarySource::PreferenceOverride)
             } else {
                 (String::new(), OmpBinarySource::Bundled)
@@ -487,8 +498,8 @@ pub fn omp_binary_info(app: AppHandle, cache: State<'_, OmpVersionCache>) -> Omp
 /// candidate under test is never used for anything else (ADR-0004).
 #[tauri::command]
 #[specta::specta]
-pub fn omp_smoke_test(path: String) -> Result<SmokeReport, SmokeFailure> {
-    smoke::smoke_test(Path::new(&path))
+pub async fn omp_smoke_test(path: String) -> Result<SmokeReport, SmokeFailure> {
+    crate::omp_cli::blocking(move || smoke::smoke_test(Path::new(&path))).await
 }
 
 /// Smoke-tests `path` and, only on success, commits it as the App
@@ -500,19 +511,25 @@ pub fn omp_smoke_test(path: String) -> Result<SmokeReport, SmokeFailure> {
 /// user has already confirmed it.
 #[tauri::command]
 #[specta::specta]
-pub fn omp_override_commit(
+pub async fn omp_override_commit(
     app: AppHandle,
-    cache: State<'_, OmpVersionCache>,
     path: String,
 ) -> Result<OmpBinaryInfo, OmpOverrideError> {
-    let report = smoke::smoke_test(Path::new(&path)).map_err(OmpOverrideError::Smoke)?;
-    remember_version(&cache, Path::new(&path), &report.version);
+    crate::omp_cli::blocking(move || {
+        let report = smoke::smoke_test(Path::new(&path)).map_err(OmpOverrideError::Smoke)?;
+        remember_version(
+            &app.state::<OmpVersionCache>(),
+            Path::new(&path),
+            &report.version,
+        );
 
-    let mut prefs = preferences::load_preferences(&app);
-    prefs.omp_path = Some(path);
-    preferences::save_preferences(&app, &prefs).map_err(OmpOverrideError::Preferences)?;
+        let mut prefs = preferences::load_preferences(&app);
+        prefs.omp_path = Some(path);
+        preferences::save_preferences(&app, &prefs).map_err(OmpOverrideError::Preferences)?;
 
-    Ok(omp_binary_info(app, cache))
+        Ok(binary_info(&app))
+    })
+    .await
 }
 
 /// Reverts the App Preferences omp override to the bundled pin — no smoke
@@ -522,11 +539,14 @@ pub fn omp_override_commit(
 /// rather than falsely claiming the override was cleared.
 #[tauri::command]
 #[specta::specta]
-pub fn omp_override_clear(app: AppHandle, cache: State<'_, OmpVersionCache>) -> OmpBinaryInfo {
-    let mut prefs = preferences::load_preferences(&app);
-    prefs.omp_path = None;
-    let _ = preferences::save_preferences(&app, &prefs);
-    omp_binary_info(app, cache)
+pub async fn omp_override_clear(app: AppHandle) -> OmpBinaryInfo {
+    crate::omp_cli::blocking(move || {
+        let mut prefs = preferences::load_preferences(&app);
+        prefs.omp_path = None;
+        let _ = preferences::save_preferences(&app, &prefs);
+        binary_info(&app)
+    })
+    .await
 }
 
 #[cfg(test)]

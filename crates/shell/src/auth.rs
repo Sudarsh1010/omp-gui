@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::AppHandle;
 
-use crate::omp_cli::{run_omp_cli, run_omp_json, CliError};
+use crate::omp_cli::{CliError, blocking, run_omp_cli, run_omp_json};
 
 /// One OAuth/credential provider omp's auth broker knows about, exactly as
 /// `omp auth-broker list --json` reports it (69 entries as of the pin this
@@ -78,8 +78,8 @@ fn parse_account_lines(stdout: &str, provider_id: &str) -> Vec<AuthAccount> {
 /// row set — one row per provider regardless of login state).
 #[tauri::command]
 #[specta::specta]
-pub fn auth_providers_list(app: AppHandle) -> Result<Vec<AuthProvider>, CliError> {
-    run_omp_json(&app, &["auth-broker", "list", "--json"])
+pub async fn auth_providers_list(app: AppHandle) -> Result<Vec<AuthProvider>, CliError> {
+    blocking(move || run_omp_json(&app, &["auth-broker", "list", "--json"])).await
 }
 
 /// List every stored OAuth account across every provider. `omp token` has
@@ -92,11 +92,15 @@ pub fn auth_providers_list(app: AppHandle) -> Result<Vec<AuthProvider>, CliError
 /// one CLI quirk on one of ~70 providers can never blank the section.
 #[tauri::command]
 #[specta::specta]
-pub fn auth_accounts_list(app: AppHandle) -> Result<Vec<AuthAccount>, CliError> {
-    let providers: Vec<AuthProvider> = run_omp_json(&app, &["auth-broker", "list", "--json"])?;
+pub async fn auth_accounts_list(app: AppHandle) -> Result<Vec<AuthAccount>, CliError> {
+    blocking(move || list_accounts(&app)).await
+}
+
+fn list_accounts(app: &AppHandle) -> Result<Vec<AuthAccount>, CliError> {
+    let providers: Vec<AuthProvider> = run_omp_json(app, &["auth-broker", "list", "--json"])?;
     let mut accounts = Vec::new();
     for provider in &providers {
-        match run_omp_cli(&app, &["token", &provider.id, "--list"]) {
+        match run_omp_cli(app, &["token", &provider.id, "--list"]) {
             Ok(output) => accounts.extend(parse_account_lines(&output.stdout, &provider.id)),
             Err(CliError::Rejected { .. }) => {
                 // No accounts stored for this provider (or some other
@@ -120,7 +124,6 @@ pub fn auth_accounts_list(app: AppHandle) -> Result<Vec<AuthAccount>, CliError> 
 /// `CliError` paths (binary unresolvable/unspawnable).
 #[tauri::command]
 #[specta::specta]
-pub fn auth_logout(app: AppHandle, provider_id: String) -> Result<(), CliError> {
-    run_omp_cli(&app, &["auth-broker", "logout", &provider_id])?;
-    Ok(())
+pub async fn auth_logout(app: AppHandle, provider_id: String) -> Result<(), CliError> {
+    blocking(move || run_omp_cli(&app, &["auth-broker", "logout", &provider_id]).map(|_| ())).await
 }

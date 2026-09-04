@@ -12,7 +12,7 @@
 //! `run_omp_cli` here instead of shelling out from the home directory) so
 //! there is exactly one `omp config` invocation path in this crate.
 
-use crate::omp_cli::{CliError, run_omp_cli, run_omp_json};
+use crate::omp_cli::{CliError, blocking, run_omp_cli, run_omp_json};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::BTreeMap;
@@ -182,8 +182,8 @@ fn entry_after(app: &AppHandle, key: &str) -> Result<ConfigEntry, CliError> {
 /// directory, so a project's `.claude/settings.json` can never leak in.
 #[tauri::command]
 #[specta::specta]
-pub fn config_list(app: AppHandle) -> Result<Vec<ConfigEntry>, CliError> {
-    list_entries(&app)
+pub async fn config_list(app: AppHandle) -> Result<Vec<ConfigEntry>, CliError> {
+    blocking(move || list_entries(&app)).await
 }
 
 /// Set `key` to `value` (the raw CLI string omp expects for that key's
@@ -201,8 +201,8 @@ pub(crate) fn set_value(app: &AppHandle, key: &str, value: &str) -> Result<Confi
 
 #[tauri::command]
 #[specta::specta]
-pub fn config_set(app: AppHandle, key: String, value: String) -> Result<ConfigEntry, CliError> {
-    set_value(&app, &key, &value)
+pub async fn config_set(app: AppHandle, key: String, value: String) -> Result<ConfigEntry, CliError> {
+    blocking(move || set_value(&app, &key, &value)).await
 }
 
 /// Restore `key` to omp's current schema default and return the entry.
@@ -215,8 +215,8 @@ pub(crate) fn reset_value(app: &AppHandle, key: &str) -> Result<ConfigEntry, Cli
 
 #[tauri::command]
 #[specta::specta]
-pub fn config_reset(app: AppHandle, key: String) -> Result<ConfigEntry, CliError> {
-    reset_value(&app, &key)
+pub async fn config_reset(app: AppHandle, key: String) -> Result<ConfigEntry, CliError> {
+    blocking(move || reset_value(&app, &key)).await
 }
 
 /// Remove `key` from the global config file entirely (distinct from
@@ -224,9 +224,8 @@ pub fn config_reset(app: AppHandle, key: String) -> Result<ConfigEntry, CliError
 /// itself).
 #[tauri::command]
 #[specta::specta]
-pub fn config_unset(app: AppHandle, key: String) -> Result<(), CliError> {
-    run_omp_cli(&app, &["config", "unset", &key, "--json"])?;
-    Ok(())
+pub async fn config_unset(app: AppHandle, key: String) -> Result<(), CliError> {
+    blocking(move || run_omp_cli(&app, &["config", "unset", &key, "--json"]).map(|_| ())).await
 }
 
 /// The running binary's own description of its settings surface — tabs,
@@ -236,8 +235,8 @@ pub fn config_unset(app: AppHandle, key: String) -> Result<(), CliError> {
 /// section to Advanced-only, per ADR-0011's fallback paragraph.
 #[tauri::command]
 #[specta::specta]
-pub fn config_schema(app: AppHandle) -> Result<ConfigSchema, CliError> {
-    run_omp_json(&app, &["config", "schema", "--json"])
+pub async fn config_schema(app: AppHandle) -> Result<ConfigSchema, CliError> {
+    blocking(move || run_omp_json(&app, &["config", "schema", "--json"])).await
 }
 
 #[cfg(test)]

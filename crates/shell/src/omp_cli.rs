@@ -72,11 +72,13 @@ impl fmt::Display for CliError {
     }
 }
 
-/// `<app_cache_dir>/omp-scratch`, wiped and recreated empty on every call.
-/// Never the user's home directory or any real project path — a project's
-/// `.claude/settings.json` there would silently shadow the global value
-/// every one of these commands reads or writes (ADR-0011, note
-/// `04-omp-cli-surface.md` §11's leak test).
+/// A fresh, empty `<app_cache_dir>/omp-scratch/<uuid>` for one invocation,
+/// removed after the call returns. Never the user's home directory or any
+/// real project path — a project's `.claude/settings.json` there would
+/// silently shadow the global value every one of these commands reads or
+/// writes (ADR-0011, note `04-omp-cli-surface.md` §11's leak test). Per-call
+/// directories keep concurrent invocations (Accounts walks ~70 providers
+/// while the settings page lists config) from wiping each other's cwd.
 fn scratch_dir(app: &AppHandle) -> Result<PathBuf, CliError> {
     let cache_dir = app
         .path()
@@ -85,18 +87,25 @@ fn scratch_dir(app: &AppHandle) -> Result<PathBuf, CliError> {
             stage: CliStage::Resolve,
             message: format!("could not resolve the app cache directory: {e}"),
         })?;
-    let scratch = cache_dir.join("omp-scratch");
-    if scratch.exists() {
-        fs::remove_dir_all(&scratch).map_err(|e| CliError::Unavailable {
-            stage: CliStage::Resolve,
-            message: format!("could not clear the omp scratch directory: {e}"),
-        })?;
-    }
+    let scratch = cache_dir
+        .join("omp-scratch")
+        .join(uuid::Uuid::new_v4().to_string());
     fs::create_dir_all(&scratch).map_err(|e| CliError::Unavailable {
         stage: CliStage::Resolve,
         message: format!("could not create the omp scratch directory: {e}"),
     })?;
     Ok(scratch)
+}
+
+/// Runs a blocking omp shell-out off the main thread. Tauri executes
+/// non-async commands on the main thread, which would freeze the webview
+/// for the duration of every `omp` subprocess (a smoke test is 10s+; the
+/// Accounts walk is ~70 sequential CLI calls), so every omp-backed command
+/// is `async` and delegates here.
+pub(crate) async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .expect("blocking omp task panicked")
 }
 
 /// Runs the resolved omp binary with `args`, `current_dir` pinned to the
@@ -114,11 +123,12 @@ pub(crate) fn run_omp_cli(app: &AppHandle, args: &[&str]) -> Result<CliOutput, C
     let output = Command::new(&omp_path)
         .args(args)
         .current_dir(&scratch)
-        .output()
-        .map_err(|e| CliError::Unavailable {
-            stage: CliStage::Spawn,
-            message: format!("failed to spawn {}: {e}", omp_path.display()),
-        })?;
+        .output();
+    let _ = fs::remove_dir_all(&scratch);
+    let output = output.map_err(|e| CliError::Unavailable {
+        stage: CliStage::Spawn,
+        message: format!("failed to spawn {}: {e}", omp_path.display()),
+    })?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     if !output.status.success() {

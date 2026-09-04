@@ -18,7 +18,7 @@ export function AppPreferencesSection() {
       <SettingsGroup title="Appearance">
         <ThemeRow />
       </SettingsGroup>
-      <SettingsGroup title="omp">
+      <SettingsGroup title="omp binary">
         <OmpBinaryRow />
       </SettingsGroup>
       <SettingsGroup title="Sessions">
