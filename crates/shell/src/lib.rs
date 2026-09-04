@@ -3,6 +3,7 @@ mod chromium_install;
 mod omp;
 mod preferences;
 mod sessions;
+mod smoke;
 /// The single specta builder shared by the runtime and the bindings export
 /// test, so the checked-in bindings can never drift from the live handler.
 fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
@@ -21,6 +22,10 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             sessions::read_session_preview,
             preferences::preferences_read,
             preferences::preferences_write,
+            omp::omp_binary_info,
+            omp::omp_smoke_test,
+            omp::omp_override_commit,
+            omp::omp_override_clear,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,
@@ -37,6 +42,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(omp::OmpState::default())
+        .manage(omp::OmpVersionCache::default())
         .manage(browser::BrowserState::default())
         .manage(chromium_install::ChromiumInstallState::default())
         .invoke_handler(builder.invoke_handler())
