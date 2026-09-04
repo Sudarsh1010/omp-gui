@@ -7,11 +7,15 @@
  */
 import { SettingsGroup } from "./settings-group";
 import { ThemeRow } from "./theme-row";
+import { OmpBinaryRow } from "./omp-binary-row";
 
 export function AppPreferencesSection() {
   return (
-    <SettingsGroup title="Appearance">
-      <ThemeRow />
-    </SettingsGroup>
+    <>
+      <SettingsGroup title="Appearance">
+        <ThemeRow />
+      </SettingsGroup>
+      <OmpBinaryRow />
+    </>
   );
 }
