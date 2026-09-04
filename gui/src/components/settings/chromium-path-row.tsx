@@ -101,7 +101,7 @@ export function ChromiumPathRow() {
       modified={saved !== ""}
       status={status}
     >
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex min-w-0 flex-col items-end gap-1">
         <Input
           value={value}
           placeholder="Auto-detected"
@@ -113,7 +113,7 @@ export function ChromiumPathRow() {
           }}
         />
         {effective && (
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="max-w-64 truncate font-mono text-[10px] text-muted-foreground" title={effectiveCaption(effective)}>
             {effectiveCaption(effective)}
           </span>
         )}

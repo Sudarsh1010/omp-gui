@@ -46,7 +46,7 @@ export function SettingsRow({
       id={`row-${rowKey}`}
       className="group flex min-h-8 items-center justify-between gap-4 px-3 py-2"
     >
-      <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex min-w-0 flex-1 basis-0 flex-col gap-0.5">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-foreground">{label}</span>
           {modified && (
@@ -64,7 +64,7 @@ export function SettingsRow({
         </div>
         {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex min-w-0 max-w-[60%] shrink-0 items-center gap-2">
         <RowStatusIndicator status={status} />
         {children}
       </div>

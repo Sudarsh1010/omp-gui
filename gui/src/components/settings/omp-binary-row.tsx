@@ -28,9 +28,7 @@ import { Spinner } from "@omp-gui/ui/components/spinner";
 import { BridgeCommandError, type OmpBinaryInfo, type OmpBinarySource } from "@omp-gui/ipc";
 import { useAppPreferences } from "@gui/settings/use-app-preferences";
 import { useSettingsContext } from "./settings-context";
-import { SettingsGroup } from "./settings-group";
 import { SettingsRow } from "./settings-row";
-import { SessionsNote } from "./sessions-note";
 
 /** `localStorage` key recording that the user has already acknowledged
  * the compatibility-risk dialog once -- App Preferences' own schema is
@@ -181,11 +179,10 @@ export function OmpBinaryRow() {
 
   return (
     <>
-      <SettingsGroup title="omp binary">
-        <SettingsRow rowKey="omp-binary" label="Which omp the app runs" keyPath="ompPath">
-          <div className="flex w-full flex-col items-end gap-2">
+      <SettingsRow rowKey="omp-binary" label="Which omp the app runs" keyPath="ompPath">
+          <div className="flex w-full max-w-sm flex-col items-end gap-2">
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <span className="font-mono text-[11px] text-muted-foreground" title={info?.path || undefined}>
+              <span className="max-w-sm truncate font-mono text-[11px] text-muted-foreground" title={info?.path || undefined}>
                 {info?.path || "resolving…"}
               </span>
               {info?.version && <span className="text-xs text-muted-foreground">{info.version}</span>}
@@ -233,9 +230,7 @@ export function OmpBinaryRow() {
               </span>
             )}
           </div>
-        </SettingsRow>
-      </SettingsGroup>
-      <SessionsNote />
+      </SettingsRow>
 
       <AlertDialog
         open={pending !== null}
