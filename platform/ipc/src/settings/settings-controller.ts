@@ -12,6 +12,7 @@
  */
 import { BridgeCommandError, type ConfigEntry, type ShellBridge } from "../bridge/shell-bridge";
 import type { CliError } from "../bindings/bindings.gen";
+import { describeCliError } from "./cli-error";
 import { serializeConfigValue } from "./serialize";
 
 export type SettingsStatus = "loading" | "ready" | "error";
@@ -89,20 +90,6 @@ function configBridge(
   };
 }
 
-/** Narrows a `BridgeCommandError<CliError>` into the snapshot's
- * `{stage, message}` shape; `Rejected` (no stage of its own — it's omp's
- * validation, not a transport stage) reports `"rejected"` so a degraded
- * `SectionError` still has something to show under "stage". */
-function describeError(error: unknown): { stage: string; message: string } {
-  if (error instanceof BridgeCommandError) {
-    const cliError = error.error as CliError;
-    return cliError.type === "unavailable"
-      ? { stage: cliError.stage, message: cliError.message }
-      : { stage: "rejected", message: cliError.message };
-  }
-  return { stage: "unknown", message: error instanceof Error ? error.message : String(error) };
-}
-
 function rejectionMessage(error: unknown): string {
   if (error instanceof BridgeCommandError) {
     return (error.error as CliError).message;
@@ -152,7 +139,7 @@ export function createSettingsController(bridge: ShellBridge): SettingsControlle
       const entries = new Map(list.map((entry) => [entry.key, entry] as const));
       emit({ status: "ready", entries, error: undefined });
     } catch (error) {
-      emit({ status: "error", error: describeError(error) });
+      emit({ status: "error", error: describeCliError(error) });
     }
   };
 

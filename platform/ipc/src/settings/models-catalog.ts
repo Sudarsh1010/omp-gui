@@ -19,9 +19,10 @@
  * materialize the full catalog's selectors minus that one, since omp has
  * no separate "exclude" list.
  */
-import { BridgeCommandError, type ModelEntry, type ShellBridge } from "../bridge/shell-bridge";
+import type { ModelEntry, ShellBridge } from "../bridge/shell-bridge";
 import type { JsonValue } from "../bindings/bindings.gen";
 import type { SettingsController } from "./settings-controller";
+import { describeCliError } from "./cli-error";
 
 /**
  * omp's own documented semantics for the `enabledModels` allow-list
@@ -124,24 +125,6 @@ function asStringRecord(value: JsonValue | null | undefined): Record<string, str
     if (typeof entry === "string") record[key] = entry;
   }
   return record;
-}
-
-/** Extracts `{ stage, message }` from a `BridgeCommandError<CliError>`,
- * falling back to a bare message for anything else — mirrors
- * `accounts-controller.ts`'s `describeError`. */
-function describeError(error: unknown): { stage: string; message: string } {
-  if (error instanceof BridgeCommandError) {
-    const cliError = error.error;
-    if (cliError && typeof cliError === "object" && "type" in cliError) {
-      if (cliError.type === "unavailable") {
-        return { stage: cliError.stage, message: cliError.message };
-      }
-      if (cliError.type === "rejected") {
-        return { stage: "rejected", message: cliError.message };
-      }
-    }
-  }
-  return { stage: "unknown", message: error instanceof Error ? error.message : String(error) };
 }
 
 /** Groups `models` by provider, narrows by `filter` (a provider whose id
@@ -265,7 +248,7 @@ export function createModelsCatalogController(
       catalogError = undefined;
     } catch (error) {
       catalogStatus = "error";
-      catalogError = describeError(error);
+      catalogError = describeCliError(error);
     }
     rebuild();
   };

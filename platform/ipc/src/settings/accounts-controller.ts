@@ -14,7 +14,7 @@
  * completes so `loggedInAs` reflects the new state.
  */
 import type { AuthAccount, AuthProvider, ShellBridge } from "../bridge/shell-bridge";
-import { BridgeCommandError } from "../bridge/shell-bridge";
+import { describeCliError } from "./cli-error";
 
 export type AccountsStatus = "loading" | "ready" | "error";
 
@@ -27,17 +27,13 @@ export interface AccountRow {
    * `null` when nothing is stored for this provider. A provider can have
    * more than one stored account (`token`'s `--account` selects among
    * them); the row surfaces the first so "logged in as" stays a single
-   * line — the full set is available from `accounts` on the snapshot. */
+   * line. */
   loggedInAs: string | null;
 }
 
 export interface AccountsSnapshot {
   status: AccountsStatus;
   rows: readonly AccountRow[];
-  /** Every stored account, ungrouped — `rows` derives `loggedInAs` from
-   * this, kept on the snapshot too for a consumer that needs the full set
-   * (e.g. more than one stored account for a provider). */
-  accounts: readonly AuthAccount[];
   /** Failure detail from the most recent `reload`/`logout`, naming the
    * stage omp couldn't be reached at (a `SectionError` degrade trigger,
    * ADR-0011 "Bootstrap independence") — `undefined` once a reload
@@ -48,7 +44,6 @@ export interface AccountsSnapshot {
 export const EMPTY_ACCOUNTS_SNAPSHOT: AccountsSnapshot = {
   status: "loading",
   rows: [],
-  accounts: [],
   error: undefined,
 };
 
@@ -96,24 +91,6 @@ function buildRows(
   }));
 }
 
-/** Extracts `{ stage, message }` from a `CliError`-carrying
- * `BridgeCommandError`, falling back to a bare message for anything else
- * (a transport-level failure, not omp's own `CliError` shape). */
-function describeError(error: unknown): { stage: string; message: string } {
-  if (error instanceof BridgeCommandError) {
-    const cliError = error.error;
-    if (cliError && typeof cliError === "object" && "type" in cliError) {
-      if (cliError.type === "unavailable") {
-        return { stage: cliError.stage, message: cliError.message };
-      }
-      if (cliError.type === "rejected") {
-        return { stage: "rejected", message: cliError.message };
-      }
-    }
-  }
-  return { stage: "unknown", message: error instanceof Error ? error.message : String(error) };
-}
-
 /**
  * Creates an `AccountsController` bound to one `ShellBridge`. Fetches
  * providers and accounts immediately; call `dispose()` when the owning
@@ -132,9 +109,9 @@ export function createAccountsController(bridge: ShellBridge): AccountsControlle
     try {
       const { authProvidersList, authAccountsList } = authBridge(bridge);
       const [providers, accounts] = await Promise.all([authProvidersList(), authAccountsList()]);
-      emit({ status: "ready", rows: buildRows(providers, accounts), accounts, error: undefined });
+      emit({ status: "ready", rows: buildRows(providers, accounts), error: undefined });
     } catch (error) {
-      emit({ status: "error", error: describeError(error) });
+      emit({ status: "error", error: describeCliError(error) });
     }
   };
 
@@ -151,7 +128,7 @@ export function createAccountsController(bridge: ShellBridge): AccountsControlle
       try {
         await authBridge(bridge).authLogout(providerId);
       } catch (error) {
-        emit({ error: describeError(error) });
+        emit({ error: describeCliError(error) });
         throw error;
       }
       await reload();
