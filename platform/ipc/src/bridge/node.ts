@@ -273,9 +273,52 @@ interface Session {
  * default cwd. `preferencesPath` is the file the App Preferences seam test
  * (and controller test) point at — a bridge built without it simply has no
  * `preferencesRead`/`preferencesWrite` methods (both optional on
- * `ShellBridge`). */
+ * `ShellBridge`), and `start()` never consults a `defaultWorkingDirectory`
+ * preference either (#22). `agentDir`, when set, becomes `PI_CODING_AGENT_DIR`
+ * for every process this bridge spawns, so each seam test gets its own
+ * hermetic agent dir instead of sharing (or leaking into) the real
+ * `~/.omp` — additive: omitted, spawned processes simply inherit
+ * `process.env` unchanged. */
 export interface NodeBridgeOptions {
   preferencesPath?: string;
+  agentDir?: string;
+}
+
+/**
+ * Mirrors `crates/shell/src/omp.rs`'s `resolve_start_cwd` precedence
+ * exactly (#22), so `nodeBridge.start()` behaves like the real Tauri
+ * shell's `omp_start`: an explicit `requested` directory (a resume's
+ * recorded cwd) always wins when it exists; otherwise the App Preferences
+ * `defaultWorkingDirectory` wins when it names an existing directory (only
+ * checked when this bridge was built with a `preferencesPath`); otherwise
+ * the constructor's own `fallbackCwd`.
+ */
+async function resolveStartCwd(
+  requested: string | undefined,
+  fallbackCwd: string,
+  preferencesPath: string | undefined,
+): Promise<string> {
+  const trimmedRequested = requested?.trim();
+  if (trimmedRequested && (await isExistingDirectory(trimmedRequested))) {
+    return trimmedRequested;
+  }
+  if (preferencesPath) {
+    const prefs = await readPreferencesFile(preferencesPath);
+    const preferred = prefs.defaultWorkingDirectory?.trim();
+    if (preferred && (await isExistingDirectory(preferred))) {
+      return preferred;
+    }
+  }
+  return fallbackCwd;
+}
+
+async function isExistingDirectory(path: string): Promise<boolean> {
+  try {
+    const info = await stat(path);
+    return info.isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeOptions = {}): ShellBridge {
@@ -293,17 +336,21 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
     for (const handler of exitHandlers) handler(event);
   };
 
-  const { preferencesPath } = options;
+  const { preferencesPath, agentDir } = options;
+  const spawnEnv = agentDir ? { ...process.env, PI_CODING_AGENT_DIR: agentDir } : process.env;
 
   return {
-    start(cwdOverride?: string): Promise<OmpStartInfo> {
+    async start(cwdOverride?: string): Promise<OmpStartInfo> {
       const sessionId = randomUUID();
+      const resolvedCwd = await resolveStartCwd(cwdOverride, cwd, preferencesPath);
       const version = execFileSync(binaryPath, ["--version"], {
         encoding: "utf8",
+        env: spawnEnv,
       }).trim();
       const child = spawn(binaryPath, ["--mode", "rpc-ui"], {
-        cwd: cwdOverride ?? cwd,
+        cwd: resolvedCwd,
         stdio: ["pipe", "pipe", "inherit"],
+        env: spawnEnv,
       });
 
       if (!child.stdin || !child.stdout) {

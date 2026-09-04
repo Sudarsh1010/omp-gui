@@ -13,6 +13,8 @@ import type {
   ChromiumInstallEvent,
   AppPreferences,
   PreferencesError,
+  EffectivePreferences,
+  PathProbe,
 } from "../bindings/bindings.gen";
 
 export type {
@@ -29,6 +31,8 @@ export type {
   ChromiumInstallEvent,
   AppPreferences,
   PreferencesError,
+  EffectivePreferences,
+  PathProbe,
 };
 
 export interface ShellBridge {
@@ -122,6 +126,23 @@ export interface ShellBridge {
    * same reason as `preferencesRead`.
    */
   preferencesWrite?(prefs: AppPreferences): Promise<AppPreferences>;
+  /**
+   * The default working directory a fresh session would actually spawn
+   * into and the Chromium executable the Browser Pane would actually
+   * launch, plus where each came from (#22, issue #19: "Both rows show
+   * the effective value and where it came from"). Optional for the same
+   * reason as `preferencesRead`.
+   */
+  preferencesEffective?(): Promise<EffectivePreferences>;
+  /**
+   * Probe an arbitrary filesystem path (existence, directory-ness,
+   * executable-ness) so the working-directory/Chromium-path rows (#22)
+   * can validate an edit inline before committing it — the validated
+   * path field stands in for a directory picker since no Tauri dialog
+   * plugin is wired in yet. Optional for the same reason as
+   * `preferencesRead`.
+   */
+  pathProbe?(path: string): Promise<PathProbe>;
 }
 
 /**

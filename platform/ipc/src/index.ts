@@ -106,3 +106,11 @@ export type {
   AppPreferencesStatus,
 } from "./preferences/app-preferences";
 export type { AppPreferences, PreferencesError, Theme } from "./bindings/bindings.gen";
+export type {
+  EffectivePreferences,
+  EffectiveWorkingDirectory,
+  WorkingDirectorySource,
+  EffectiveChromiumPath,
+  ChromiumPathSource,
+  PathProbe,
+} from "./bindings/bindings.gen";

@@ -53,7 +53,10 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 
 /// Power-user override, mirrors `OMP_GUI_OMP_PATH`'s naming (ADR-0004).
-const CHROMIUM_OVERRIDE_ENV: &str = "OMP_GUI_CHROMIUM_PATH";
+/// Crate-visible so `preferences.rs`'s `preferences_effective` (#22) can
+/// report the exact env var name the Chromium Path row's description
+/// documents, rather than a second, driftable copy of the string.
+pub(crate) const CHROMIUM_OVERRIDE_ENV: &str = "OMP_GUI_CHROMIUM_PATH";
 /// The ecosystem-standard override that omp's own Chromium resolution also
 /// honors first (notes/browser.md §5) — set once, both processes agree.
 const PUPPETEER_EXECUTABLE_ENV: &str = "PUPPETEER_EXECUTABLE_PATH";
@@ -500,7 +503,80 @@ pub fn browser_set_takeover(
     Ok(())
 }
 
-/// `PUPPETEER_EXECUTABLE_PATH` / our own override always win; otherwise scan
+/// Where `resolve_chromium_source` picked the Chromium executable from.
+/// Crate-visible so `preferences.rs`'s `preferences_effective` (#22) can
+/// map it onto its own specta-typed `ChromiumPathSource` for the Settings
+/// row, without a second copy of this precedence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChromiumSource {
+    /// `OMP_GUI_CHROMIUM_PATH` or `PUPPETEER_EXECUTABLE_PATH`.
+    Env,
+    /// The App Preferences `chromiumPath` (#22).
+    Preference,
+    /// A `@puppeteer/browsers`-managed cache scan.
+    Cache,
+    /// Nothing resolved.
+    None,
+}
+
+/// `PUPPETEER_EXECUTABLE_PATH` / our own override, checked first by
+/// `resolve_chromium_executable`'s caller (`Ok` only for a path that is
+/// actually a file). Factored out so `preferences_effective` (#22) can
+/// report the same env-var resolution without duplicating it.
+pub(crate) fn chromium_env_override() -> Option<PathBuf> {
+    [CHROMIUM_OVERRIDE_ENV, PUPPETEER_EXECUTABLE_ENV]
+        .into_iter()
+        .find_map(|env_var| std::env::var(env_var).ok())
+        .map(PathBuf::from)
+}
+
+/// Scans the standard `@puppeteer/browsers` cache layout (see
+/// `resolve_chromium_executable`'s doc comment) under both the
+/// ecosystem-default cache and omp's own managed-browser cache. Factored
+/// out so `preferences_effective` (#22) can run the identical scan.
+pub(crate) fn find_cached_chromium(app: &AppHandle) -> Option<PathBuf> {
+    let home = app.path().home_dir().ok()?;
+    let relative = chrome_for_testing_relative_path();
+    [
+        home.join(".cache").join("puppeteer"),
+        home.join(".omp").join("puppeteer"),
+    ]
+    .into_iter()
+    .find_map(|cache_root| find_chrome_in_cache(&cache_root, &relative))
+}
+
+/// Pure precedence resolution, independent of any actual env/filesystem
+/// probing so it is unit-testable: `env_override` (already validated by
+/// the caller's own env-var lookup) wins when it names an existing file;
+/// otherwise a non-empty `preference` (#22's App Preferences
+/// `chromiumPath`) wins when it names an existing file; otherwise
+/// `cache_lookup` runs lazily (only reached when both prior steps miss,
+/// so an idle Settings row never pays for a cache scan a hit env var or
+/// preference would have skipped).
+pub(crate) fn resolve_chromium_source(
+    env_override: Option<PathBuf>,
+    preference: Option<&str>,
+    cache_lookup: impl FnOnce() -> Option<PathBuf>,
+) -> (Option<PathBuf>, ChromiumSource) {
+    if let Some(path) = env_override {
+        if path.is_file() {
+            return (Some(path), ChromiumSource::Env);
+        }
+    }
+    if let Some(dir) = preference.map(str::trim).filter(|s| !s.is_empty()) {
+        let path = PathBuf::from(dir);
+        if path.is_file() {
+            return (Some(path), ChromiumSource::Preference);
+        }
+    }
+    if let Some(path) = cache_lookup() {
+        return (Some(path), ChromiumSource::Cache);
+    }
+    (None, ChromiumSource::None)
+}
+
+/// `PUPPETEER_EXECUTABLE_PATH` / our own override, then the App
+/// Preferences `chromiumPath` override (#22), always win; otherwise scan
 /// the standard `@puppeteer/browsers` cache layout (`<root>/chrome/<platform
 /// >-<buildId>/<relative>`) under both the ecosystem-default cache and omp's
 /// own managed-browser cache, so a *headed* Chrome for Testing the user
@@ -513,28 +589,14 @@ pub fn browser_set_takeover(
 /// failing here must
 /// give the user an actionable next step.
 fn resolve_chromium_executable(app: &AppHandle) -> Result<PathBuf, BrowserError> {
-    for env_var in [CHROMIUM_OVERRIDE_ENV, PUPPETEER_EXECUTABLE_ENV] {
-        if let Ok(path) = std::env::var(env_var) {
-            let path = PathBuf::from(path);
-            if path.is_file() {
-                return Ok(path);
-            }
-        }
-    }
+    let preference = crate::preferences::load_preferences(app).chromium_path;
+    let (found, _source) = resolve_chromium_source(
+        chromium_env_override(),
+        preference.as_deref(),
+        || find_cached_chromium(app),
+    );
 
-    if let Ok(home) = app.path().home_dir() {
-        let relative = chrome_for_testing_relative_path();
-        for cache_root in [
-            home.join(".cache").join("puppeteer"),
-            home.join(".omp").join("puppeteer"),
-        ] {
-            if let Some(found) = find_chrome_in_cache(&cache_root, &relative) {
-                return Ok(found);
-            }
-        }
-    }
-
-    Err(BrowserError::ChromiumNotFound {
+    found.ok_or_else(|| BrowserError::ChromiumNotFound {
         message: format!(
             "no Chrome for Testing binary found. The Browser Pane needs a headed \
              Chrome for Testing (ADR-0006); omp's builtin browser tool only downloads \
@@ -1346,4 +1408,91 @@ fn set_relay_config(omp_path: &Path, app: &AppHandle, enabled: bool) -> Result<(
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// A unique, existing temp file (stands in for a Chromium binary),
+    /// cleaned up via `Drop`.
+    struct TempFile(PathBuf);
+    impl TempFile {
+        fn new(name: &str) -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!("omp-gui-chromium-test-{name}-{nanos}"));
+            std::fs::write(&path, b"").unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            std::fs::remove_file(&self.0).ok();
+        }
+    }
+
+    #[test]
+    fn env_override_wins_over_preference_and_cache() {
+        let env_path = TempFile::new("env");
+        let pref_path = TempFile::new("pref");
+
+        let (found, source) = resolve_chromium_source(
+            Some(env_path.0.clone()),
+            Some(pref_path.0.to_str().unwrap()),
+            || panic!("cache_lookup must not run when the env override resolves"),
+        );
+        assert_eq!(found, Some(env_path.0.clone()));
+        assert_eq!(source, ChromiumSource::Env);
+    }
+
+    #[test]
+    fn preference_wins_over_cache_when_env_is_unset() {
+        let pref_path = TempFile::new("pref2");
+
+        let (found, source) = resolve_chromium_source(
+            None,
+            Some(pref_path.0.to_str().unwrap()),
+            || panic!("cache_lookup must not run when the preference resolves"),
+        );
+        assert_eq!(found, Some(pref_path.0.clone()));
+        assert_eq!(source, ChromiumSource::Preference);
+    }
+
+    #[test]
+    fn a_missing_env_override_falls_through_to_preference() {
+        let pref_path = TempFile::new("pref3");
+
+        let (found, source) = resolve_chromium_source(
+            Some(PathBuf::from("/nonexistent/omp-gui-chromium-env-override")),
+            Some(pref_path.0.to_str().unwrap()),
+            || panic!("cache_lookup must not run when the preference resolves"),
+        );
+        assert_eq!(found, Some(pref_path.0.clone()));
+        assert_eq!(source, ChromiumSource::Preference);
+    }
+
+    #[test]
+    fn a_missing_preference_falls_through_to_cache() {
+        let cache_path = TempFile::new("cache");
+        let cache_path_clone = cache_path.0.clone();
+
+        let (found, source) = resolve_chromium_source(
+            None,
+            Some("/nonexistent/omp-gui-chromium-preference"),
+            move || Some(cache_path_clone.clone()),
+        );
+        assert_eq!(found, Some(cache_path.0.clone()));
+        assert_eq!(source, ChromiumSource::Cache);
+    }
+
+    #[test]
+    fn nothing_resolved_anywhere_is_none() {
+        let (found, source) = resolve_chromium_source(None, None, || None);
+        assert_eq!(found, None);
+        assert_eq!(source, ChromiumSource::None);
+    }
 }

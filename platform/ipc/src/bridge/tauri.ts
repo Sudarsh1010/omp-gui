@@ -35,6 +35,8 @@ export function tauriBridge(): BrowserShellBridge {
     readSessionPreview: (path) => commands.readSessionPreview(path).then(unwrap),
     preferencesRead: () => commands.preferencesRead().then(unwrap),
     preferencesWrite: (prefs) => commands.preferencesWrite(prefs).then(unwrap),
+    preferencesEffective: () => commands.preferencesEffective().then(unwrap),
+    pathProbe: (path) => commands.pathProbe(path),
   };
 }
 /** Events expose listen() as Promise<unlisten>; bridge handlers need a sync unsubscribe. */

@@ -21,6 +21,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             sessions::read_session_preview,
             preferences::preferences_read,
             preferences::preferences_write,
+            preferences::preferences_effective,
+            preferences::path_probe,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,
