@@ -1,6 +1,8 @@
 mod browser;
 mod chromium_install;
+mod config;
 mod omp;
+mod omp_cli;
 mod preferences;
 mod sessions;
 /// The single specta builder shared by the runtime and the bindings export
@@ -21,6 +23,11 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             sessions::read_session_preview,
             preferences::preferences_read,
             preferences::preferences_write,
+            config::config_list,
+            config::config_set,
+            config::config_reset,
+            config::config_unset,
+            config::config_schema,
         ])
         .events(tauri_specta::collect_events![
             omp::OmpFrameEvent,

@@ -123,6 +123,28 @@ export const commands = {
 	 *  doesn't know about, and return what is now on disk.
 	 */
 	preferencesWrite: (prefs: AppPreferences) => typedError<AppPreferences, PreferencesError>(__TAURI_INVOKE("preferences_write", { prefs })),
+	/**
+	 *  List every setting omp's global config recognizes, current value
+	 *  included. Scope is global-only: `run_omp_cli` runs from a scratch
+	 *  directory, so a project's `.claude/settings.json` can never leak in.
+	 */
+	configList: () => typedError<ConfigEntry[], CliError>(__TAURI_INVOKE("config_list")),
+	configSet: (key: string, value: string) => typedError<ConfigEntry, CliError>(__TAURI_INVOKE("config_set", { key, value })),
+	configReset: (key: string) => typedError<ConfigEntry, CliError>(__TAURI_INVOKE("config_reset", { key })),
+	/**
+	 *  Remove `key` from the global config file entirely (distinct from
+	 *  `config_reset`, which writes an explicit default value in the record
+	 *  itself).
+	 */
+	configUnset: (key: string) => typedError<null, CliError>(__TAURI_INVOKE("config_unset", { key })),
+	/**
+	 *  The running binary's own description of its settings surface — tabs,
+	 *  groups, labels, descriptions, options, and declarative conditions
+	 *  (ADR-0011 §"schema/structure"). #26 renders the omp-tab sections from
+	 *  this; an override binary predating `config schema` degrades that
+	 *  section to Advanced-only, per ADR-0011's fallback paragraph.
+	 */
+	configSchema: () => typedError<ConfigSchema, CliError>(__TAURI_INVOKE("config_schema")),
 };
 
 /** Events */
@@ -204,6 +226,57 @@ export type ChromiumInstallEvent = {
 export type ChromiumInstallPhase = "resolving" | "downloading" | "extracting";
 
 /**
+ *  Errors from an omp CLI shell-out. Every omp-backed bridge command
+ *  (config, auth, models) rejects with this — see the module doc.
+ */
+export type CliError = 
+/**
+ *  omp could not be resolved, spawned, or its output parsed — a
+ *  binary/environment problem, not a value the user typed.
+ */
+{ type: "unavailable"; stage: CliStage; message: string } | 
+/**  omp ran and exited non-zero: its own validation/usage error text. */
+{ type: "rejected"; message: string };
+
+/**
+ *  Which step of an omp CLI shell-out failed. `Exit` is part of the
+ *  contract shape (mirrored by the smoke-test routine's own stage enum,
+ *  #23) even though `run_omp_cli` itself never constructs it — a non-zero
+ *  exit is always `CliError::Rejected`, omp's own validation speaking,
+ *  never a transport-stage failure.
+ */
+export type CliStage = "resolve" | "spawn" | "exit" | "parse";
+
+/**
+ *  One entry from `omp config list --json`, keyed by dotted setting path
+ *  (e.g. `browser.relay`). `value` is `None` when the setting has never
+ *  been explicitly overridden (its default applies) or when `redacted` is
+ *  true — omp never echoes a credential-shaped value even when set.
+ */
+export type ConfigEntry = {
+	key: string,
+	value: JsonValue | null,
+	/**  `"boolean" | "string" | "number" | "enum" | "array" | "record"`. */
+	valueType: string,
+	description: string,
+	redacted?: boolean,
+};
+
+/**
+ *  `omp config schema --json`'s envelope (ADR-0011 §"schema/structure";
+ *  contract `00-contracts.md` §F). Consumed by #26 for the schema-driven
+ *  omp tabs; #24 only needs it to exist and degrade gracefully on an
+ *  override binary that predates it (`CliError::Unavailable{stage:Parse}`
+ *  on an old binary's missing `schema` action, or `{stage:Rejected}` on a
+ *  binary whose `--help` doesn't even list the action).
+ */
+export type ConfigSchema = {
+	version: string,
+	tabs: SchemaTab[],
+	settings: SchemaEntry[],
+};
+
+/**
  *  Result of probing whether a process outside this app currently has a
  *  session file open (best-effort; see module doc).
  */
@@ -212,6 +285,22 @@ export type ForeignLockProbe = {
 	/**  PIDs of the foreign holders, for diagnostics. */
 	pids: number[],
 };
+
+/**
+ *  A minimal JSON value good enough for arbitrary config values,
+ *  defaults, and condition operands — a hand-rolled analog of
+ *  `serde_json::Value` whose `Number` variant is a plain `f64` rather
+ *  than `serde_json::Number`'s internal i64/u64 representation, which
+ *  `specta-typescript` refuses to export at all (its BigInt guard: 64-bit
+ *  integers get silently truncated by `JSON.parse`, so specta forces an
+ *  explicit, lossy-but-safe choice — see `specta_typescript::Error`'s
+ *  "BigInt Forbidden" docs). Every value flowing through this bridge is a
+ *  user-facing setting, never an opaque 64-bit id, so `f64` is exact for
+ *  anything that matters here. Deserializes directly from omp's raw JSON
+ *  output (`run_omp_json` parses straight into this type — there is no
+ *  intermediate `serde_json::Value` step).
+ */
+export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
 
 /**  Where the omp binary was resolved from, in priority order (ADR-0004). */
 export type OmpBinarySource = 
@@ -269,6 +358,47 @@ export type RelayInfo = {
 	 *  (`relay/server.ts`).
 	 */
 	extensionConnected: boolean,
+};
+
+/**
+ *  Declarative visibility condition (ADR-0011 §"schema/structure",
+ *  contract §F): evaluated live in the app against the values the binary
+ *  reports, never baked in at build time.
+ */
+export type SchemaCondition = { kind: "setting"; dependsOn: string; equals: JsonValue } | { kind: "platform"; platform: string } | { kind: "terminal"; capability: string };
+
+/**
+ *  One `SETTINGS_SCHEMA` entry with its UI metadata. `tab`/`group`/`label`/
+ *  `description` are `None` for keys omp's own settings panel never shows
+ *  (the Advanced-only keys, issue #19 story #16); `options` carries either
+ *  an array of `{ value, label, description? }` submenu choices, the
+ *  literal string `"runtime"` (choices the app itself resolves — e.g.
+ *  installed theme names), or `null` — left as raw JSON rather than a
+ *  second Rust enum since no bridge command here branches on its shape.
+ *  `values` (enum choices) is additive beyond the contract's field list:
+ *  `config list --json` never carries it (note `04-omp-cli-surface.md`
+ *  §1), so this is the only source of enum choices for a generic editor.
+ */
+export type SchemaEntry = {
+	key: string,
+	type: string,
+	default: JsonValue | null,
+	values: string[] | null,
+	tab: string | null,
+	group: string | null,
+	label: string | null,
+	description: string | null,
+	warning: string | null,
+	options: JsonValue | null,
+	ordered?: boolean,
+	secret?: boolean,
+	condition: SchemaCondition | null,
+};
+
+export type SchemaTab = {
+	id: string,
+	label: string,
+	groups: string[],
 };
 
 /**  One on-disk session file, lightweight metadata only (see module doc). */
