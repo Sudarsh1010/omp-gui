@@ -123,6 +123,41 @@ export const commands = {
 	 *  doesn't know about, and return what is now on disk.
 	 */
 	preferencesWrite: (prefs: AppPreferences) => typedError<AppPreferences, PreferencesError>(__TAURI_INVOKE("preferences_write", { prefs })),
+	/**
+	 *  Reports which omp binary the app currently resolves to run (ADR-0004's
+	 *  Bundled / Override badge). Never fails: App Preferences must stay
+	 *  usable even when the committed override is broken (ADR-0011's
+	 *  "bootstrap independence" — issue #23's "page still opens and this row
+	 *  remains editable when the committed override is broken"). A resolution
+	 *  failure is reported as the configured-but-currently-unusable path with
+	 *  `version: None`, rather than propagating an error that would take this
+	 *  always-available section down with it.
+	 */
+	ompBinaryInfo: () => __TAURI_INVOKE<OmpBinaryInfo>("omp_binary_info"),
+	/**
+	 *  Runs the shared launch-time smoke test (`smoke::smoke_test`) against an
+	 *  arbitrary candidate path, without touching App Preferences — the
+	 *  candidate under test is never used for anything else (ADR-0004).
+	 */
+	ompSmokeTest: (path: string) => typedError<SmokeReport, SmokeFailure>(__TAURI_INVOKE("omp_smoke_test", { path })),
+	/**
+	 *  Smoke-tests `path` and, only on success, commits it as the App
+	 *  Preferences omp override, returning the freshly resolved
+	 *  `OmpBinaryInfo`. A failed smoke test writes nothing, so the previously
+	 *  committed override (if any) is retained — issue #23's acceptance
+	 *  criterion. The compatibility-risk acknowledgement dialog is a GUI-only
+	 *  concern (`omp-binary-row.tsx`); this command only ever runs after the
+	 *  user has already confirmed it.
+	 */
+	ompOverrideCommit: (path: string) => typedError<OmpBinaryInfo, OmpOverrideError>(__TAURI_INVOKE("omp_override_commit", { path })),
+	/**
+	 *  Reverts the App Preferences omp override to the bundled pin — no smoke
+	 *  test needed (ADR-0004: "'Use bundled omp' restores the pin without a
+	 *  dialog"). Best-effort: a write failure leaves `omp_path` exactly as it
+	 *  was, which the fresh `omp_binary_info` read below reports truthfully
+	 *  rather than falsely claiming the override was cleared.
+	 */
+	ompOverrideClear: () => __TAURI_INVOKE<OmpBinaryInfo>("omp_override_clear"),
 };
 
 /** Events */
@@ -213,10 +248,33 @@ export type ForeignLockProbe = {
 	pids: number[],
 };
 
+/**
+ *  What the App Preferences omp-binary row renders: the resolved path and
+ *  version, its source (Bundled / Override badge), the pin's own version
+ *  (so "bundled is 18.1.10" can be shown beside a non-bundled resolution),
+ *  and whether `OMP_GUI_OMP_PATH` is currently in play (it always wins
+ *  resolution, so a committed preference override has no effect while
+ *  it's set — the row explains that rather than hiding it).
+ */
+export type OmpBinaryInfo = {
+	path: string,
+	source: OmpBinarySource,
+	version: string | null,
+	bundledVersion: string,
+	envOverrideActive: boolean,
+};
+
 /**  Where the omp binary was resolved from, in priority order (ADR-0004). */
 export type OmpBinarySource = 
 /**  `OMP_GUI_OMP_PATH` power-user override. */
 "override" | 
+/**
+ *  A path committed through the App Preferences omp-binary row
+ *  (`omp_override_commit`), gated behind `smoke::smoke_test` and the
+ *  GUI's compatibility-risk acknowledgement (ADR-0004). Loses to
+ *  `Override` when `OMP_GUI_OMP_PATH` is also set.
+ */
+"preferenceOverride" | 
 /**  Repo-local download from `scripts/fetch-omp.mjs` (development). */
 "devBinary" | 
 /**  Binary bundled into the app at build time. */
@@ -233,6 +291,14 @@ export type OmpFrameEvent = {
 	sessionId: string,
 	line: string,
 };
+
+/**
+ *  Either the smoke test rejected the candidate, or (once smoke passed)
+ *  writing it to App Preferences failed. Untagged: `SmokeFailure` and
+ *  `PreferencesError` are each self-describing (`stage`/`message` vs.
+ *  `type`/`message`), so the GUI narrows on `"stage" in error`.
+ */
+export type OmpOverrideError = SmokeFailure | PreferencesError;
 
 export type OmpStartInfo = {
 	sessionId: string,
@@ -342,6 +408,43 @@ export type SessionsError =
 { type: "homeDirUnavailable" } | 
 /**  An I/O error while walking or reading the sessions directory. */
 { type: "ioFailed"; message: string };
+
+export type SmokeFailure = {
+	stage: SmokeStage,
+	message: string,
+};
+
+export type SmokeReport = {
+	/**
+	 *  The negotiated omp version, from `<path> --version`; falls back to
+	 *  the `ready` frame's own `version` field (if present) when the
+	 *  `--version` invocation itself fails.
+	 */
+	version: string,
+};
+
+/**
+ *  Which step of the smoke sequence failed, serialized lowercase so it
+ *  reads as machine truth (Geist Mono, red-on-wash) in the override row
+ *  rather than prose.
+ */
+export type SmokeStage = 
+/**
+ *  The process could not be spawned at all (missing file, not
+ *  executable, permission denied).
+ */
+"launch" | 
+/**
+ *  The process spawned but never produced a valid `ready` frame within
+ *  the timeout (exited early, wrote garbage, or hung).
+ */
+"ready" | 
+/**
+ *  The `ready` frame arrived (and protocol v2 was negotiated when
+ *  advertised) but the canned `get_state` command never received a
+ *  correlated, successful response within the timeout.
+ */
+"roundtrip";
 
 /**
  *  The app's chosen appearance. `System` follows the OS's

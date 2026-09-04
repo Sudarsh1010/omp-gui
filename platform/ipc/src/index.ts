@@ -60,6 +60,11 @@ export type {
   ForeignLockProbe,
   SessionPreview,
   SessionPreviewMessage,
+  OmpBinaryInfo,
+  OmpOverrideError,
+  SmokeReport,
+  SmokeFailure,
+  SmokeStage,
 } from "./bindings/bindings.gen";
 
 export { createSessionDirectory } from "./session/session-directory";

@@ -4,12 +4,14 @@
  * real pinned binary — never imported by the app bundle.
  */
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { open, readdir, stat, readFile, writeFile, mkdir, rename } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ShellBridge, OmpStartInfo } from "./shell-bridge";
+import { RpcSession, type RpcTransport } from "../session/session";
 import type {
   OmpFrameEvent,
   OmpExitEvent,
@@ -17,6 +19,8 @@ import type {
   SessionPreview,
   SessionPreviewMessage,
   AppPreferences,
+  SmokeReport,
+  SmokeStage,
 } from "../bindings/bindings.gen";
 
 /** Mirrors `crates/shell/src/sessions.rs`'s scan window constants exactly,
@@ -264,6 +268,122 @@ async function readSessionPreviewFromDisk(path: string): Promise<SessionPreview>
   return { path, messages, truncated: hitMessageCap || hitByteCap };
 }
 
+/**
+ * Rejected by `smokeTestBinary` with the failed stage attached, mirroring
+ * `crates/shell/src/smoke.rs`'s `SmokeFailure { stage, message }` so a
+ * seam test (or a future node-only caller) can assert on `.stage` the
+ * same way the GUI reads the Rust command's typed error.
+ */
+export class SmokeTestError extends Error {
+  constructor(
+    readonly stage: SmokeStage,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SmokeTestError";
+  }
+}
+
+/** Per-stage timeout, mirroring `smoke.rs`'s `STAGE_TIMEOUT`. */
+const SMOKE_TIMEOUT_MS = 10_000;
+
+/**
+ * TypeScript mirror of `crates/shell/src/smoke.rs`'s `smoke_test`: spawn
+ * `<binaryPath> --mode rpc-ui` in a fresh scratch cwd with
+ * `PI_CODING_AGENT_DIR` pointed at a fresh scratch agent dir (so a
+ * candidate under test never touches real config/credentials or writes a
+ * session file anywhere the user would see it), wait for the `ready`
+ * frame, negotiate protocol v2 when advertised, complete one canned
+ * `get_state` round trip, then kill. Reuses `RpcSession.start`/`command`
+ * for the actual framing instead of reimplementing it, since this helper
+ * (unlike the Rust copy, which must stay dependency-free for the CI smoke
+ * gate) already lives in the TypeScript package that owns `RpcSession`.
+ * Exists so `nodeBridge`'s seam tests can prove a fake executable fails
+ * with a named stage without spawning the Tauri shell.
+ */
+async function smokeTestBinary(binaryPath: string): Promise<SmokeReport> {
+  const scratchCwd = mkdtempSync(join(tmpdir(), "omp-gui-smoke-cwd-"));
+  const scratchAgentDir = mkdtempSync(join(tmpdir(), "omp-gui-smoke-agent-"));
+  const cleanup = () => {
+    rmSync(scratchCwd, { recursive: true, force: true });
+    rmSync(scratchAgentDir, { recursive: true, force: true });
+  };
+
+  let child: ChildProcess;
+  try {
+    child = spawn(binaryPath, ["--mode", "rpc-ui"], {
+      cwd: scratchCwd,
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: scratchAgentDir,
+        // Mirrors `smoke.rs`'s placeholder: omp refuses to enter rpc-ui
+        // mode at all ("No models available") without some provider
+        // credential visible, even though this sequence only ever sends
+        // `get_state` and never a real `prompt`.
+        ANTHROPIC_API_KEY: "sk-ant-omp-gui-smoke-test-placeholder",
+      },
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+  } catch (error) {
+    cleanup();
+    throw new SmokeTestError("launch", error instanceof Error ? error.message : String(error));
+  }
+
+  const spawnError = new Promise<never>((_, reject) => {
+    child.once("error", (error) => reject(new SmokeTestError("launch", error.message)));
+  });
+
+  try {
+    if (!child.stdin || !child.stdout) {
+      throw new SmokeTestError("launch", "failed to pipe omp stdio");
+    }
+    const reader = createInterface({ input: child.stdout });
+    const transport: RpcTransport = {
+      send: (line) => {
+        child.stdin?.write(`${line}\n`);
+      },
+      onLine: (handler) => {
+        reader.on("line", handler);
+        return () => reader.off("line", handler);
+      },
+      onExit: (handler) => {
+        child.once("exit", handler);
+        return () => {
+          child.off("exit", handler);
+        };
+      },
+    };
+
+    let session: RpcSession;
+    try {
+      session = await Promise.race([
+        RpcSession.start(transport, {
+          readyTimeoutMs: SMOKE_TIMEOUT_MS,
+          commandTimeoutMs: SMOKE_TIMEOUT_MS,
+        }),
+        spawnError,
+      ]);
+    } catch (error) {
+      if (error instanceof SmokeTestError) throw error;
+      throw new SmokeTestError("ready", error instanceof Error ? error.message : String(error));
+    }
+
+    try {
+      await Promise.race([session.command({ type: "get_state" }), spawnError]);
+    } catch (error) {
+      throw new SmokeTestError("roundtrip", error instanceof Error ? error.message : String(error));
+    } finally {
+      session.close();
+    }
+
+    const version = execFileSync(binaryPath, ["--version"], { encoding: "utf8" }).trim();
+    return { version };
+  } finally {
+    child.kill();
+    cleanup();
+  }
+}
+
 interface Session {
   child: ChildProcess;
   cleanup: () => void;
@@ -273,9 +393,13 @@ interface Session {
  * default cwd. `preferencesPath` is the file the App Preferences seam test
  * (and controller test) point at — a bridge built without it simply has no
  * `preferencesRead`/`preferencesWrite` methods (both optional on
- * `ShellBridge`). */
+ * `ShellBridge`). `agentDir`, when set, points `PI_CODING_AGENT_DIR` at a
+ * hermetic per-test temp dir for every process this bridge spawns
+ * (`start()`'s omp session subprocess), instead of inheriting the ambient
+ * environment's real `~/.omp` — the isolation seam tests need. */
 export interface NodeBridgeOptions {
   preferencesPath?: string;
+  agentDir?: string;
 }
 
 export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeOptions = {}): ShellBridge {
@@ -293,7 +417,7 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
     for (const handler of exitHandlers) handler(event);
   };
 
-  const { preferencesPath } = options;
+  const { preferencesPath, agentDir } = options;
 
   return {
     start(cwdOverride?: string): Promise<OmpStartInfo> {
@@ -303,6 +427,7 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
       }).trim();
       const child = spawn(binaryPath, ["--mode", "rpc-ui"], {
         cwd: cwdOverride ?? cwd,
+        env: agentDir ? { ...process.env, PI_CODING_AGENT_DIR: agentDir } : process.env,
         stdio: ["pipe", "pipe", "inherit"],
       });
 
@@ -403,6 +528,8 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
     },
 
     readSessionPreview: (path: string) => readSessionPreviewFromDisk(path),
+
+    ompSmokeTest: (path: string) => smokeTestBinary(path),
 
     ...(preferencesPath
       ? {
