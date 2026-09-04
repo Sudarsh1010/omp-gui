@@ -112,6 +112,17 @@ export const commands = {
 	 *  [`SessionPreview`].
 	 */
 	readSessionPreview: (path: string) => typedError<SessionPreview, SessionsError>(__TAURI_INVOKE("read_session_preview", { path })),
+	/**
+	 *  Read the app's own preferences file (theme, omp/Chromium overrides,
+	 *  default working directory) — always available, even when omp itself is
+	 *  unreachable (ADR-0011).
+	 */
+	preferencesRead: () => typedError<AppPreferences, PreferencesError>(__TAURI_INVOKE("preferences_read")),
+	/**
+	 *  Write the app's preferences file, preserving any keys this command
+	 *  doesn't know about, and return what is now on disk.
+	 */
+	preferencesWrite: (prefs: AppPreferences) => typedError<AppPreferences, PreferencesError>(__TAURI_INVOKE("preferences_write", { prefs })),
 };
 
 /** Events */
@@ -122,6 +133,29 @@ export const events = {
 };
 
 /* Types */
+/**
+ *  The four values ADR-0011 says structurally cannot live in omp. Every
+ *  field defaults to "unset" (`Theme::System`, `None`) so a brand-new file
+ *  (or a corrupt one, per `read_file`) renders identically to one that was
+ *  never written.
+ */
+export type AppPreferences = {
+	theme?: Theme,
+	/**
+	 *  Power-user override of the omp binary to run (ADR-0004's settings
+	 *  escape hatch); `None` runs the resolved default (env override, dev
+	 *  binary, or bundled pin — see `omp::resolve_omp_path`).
+	 */
+	ompPath?: string | null,
+	/**  Override for the Chromium executable the Browser Pane launches. */
+	chromiumPath?: string | null,
+	/**
+	 *  Default working directory new sessions spawn into; `None` falls
+	 *  back to `omp_start`'s own default (the user's home directory).
+	 */
+	defaultWorkingDirectory?: string | null,
+};
+
 /**  Errors returned from Shell Bridge commands. */
 export type BridgeError = { type: "binaryNotFound"; message: string } | { type: "spawnFailed"; message: string } | { type: "writeFailed"; message: string } | { type: "killFailed"; message: string } | { type: "unknownSession" };
 
@@ -206,6 +240,9 @@ export type OmpStartInfo = {
 	path: string,
 	source: OmpBinarySource,
 };
+
+/**  Errors returned from App Preferences Shell Bridge commands. */
+export type PreferencesError = { type: "writeFailed"; message: string };
 
 /**
  *  Info the frontend needs to reflect the Relay toggle's state — the
@@ -305,6 +342,12 @@ export type SessionsError =
 { type: "homeDirUnavailable" } | 
 /**  An I/O error while walking or reading the sessions directory. */
 { type: "ioFailed"; message: string };
+
+/**
+ *  The app's chosen appearance. `System` follows the OS's
+ *  `prefers-color-scheme` live; `Light`/`Dark` pin one palette.
+ */
+export type Theme = "system" | "light" | "dark";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

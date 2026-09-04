@@ -33,6 +33,8 @@ export function tauriBridge(): BrowserShellBridge {
     listSessionFiles: () => commands.listSessionFiles().then(unwrap),
     probeForeignSessionLock: (path) => commands.probeForeignSessionLock(path).then(unwrap),
     readSessionPreview: (path) => commands.readSessionPreview(path).then(unwrap),
+    preferencesRead: () => commands.preferencesRead().then(unwrap),
+    preferencesWrite: (prefs) => commands.preferencesWrite(prefs).then(unwrap),
   };
 }
 /** Events expose listen() as Promise<unlisten>; bridge handlers need a sync unsubscribe. */

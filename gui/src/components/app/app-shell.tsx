@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import type { SessionsStore } from "@omp-gui/ipc";
+import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@omp-gui/ui/components/button";
 import {
   Empty,
@@ -14,6 +16,7 @@ import { SessionSidebar } from "@gui/components/app/session-sidebar";
 import { SessionView } from "@gui/components/session/session-view";
 import { SubagentPanel } from "@gui/components/session/subagent-panel";
 import { useSessions } from "@gui/session/use-sessions";
+import { rememberOrigin } from "@gui/settings/settings-origin";
 
 export interface AppShellProps {
   store: SessionsStore;
@@ -30,9 +33,26 @@ export interface AppShellProps {
  * from `sessions-store.ts`'s top-of-file comment: it's the third child of
  * `SidebarInset`, after `SessionView`, keyed off the same `activeId` this
  * component already tracks.
+ *
+ * The `⌘,`/`Ctrl+,` global shortcut (T20, issue #19/#20) opens `/settings`
+ * from anywhere in the dispatcher shell, mirroring the sidebar footer's
+ * gear (`session-sidebar.tsx`) — both call `rememberOrigin` first so
+ * Settings' back button and `Esc` return to whatever session was active.
  */
 export function AppShell({ store }: AppShellProps) {
   const { sessions, activeId, createSession, closeSession, selectSession } = useSessions(store);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "," || !(event.metaKey || event.ctrlKey)) return;
+      event.preventDefault();
+      rememberOrigin(window.location.href);
+      void navigate({ to: "/settings" });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navigate]);
 
   return (
     <SidebarProvider className="h-svh">

@@ -6,9 +6,9 @@
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { open, readdir, stat } from "node:fs/promises";
+import { open, readdir, stat, readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ShellBridge, OmpStartInfo } from "./shell-bridge";
 import type {
   OmpFrameEvent,
@@ -16,6 +16,7 @@ import type {
   SessionFileEntry,
   SessionPreview,
   SessionPreviewMessage,
+  AppPreferences,
 } from "../bindings/bindings.gen";
 
 /** Mirrors `crates/shell/src/sessions.rs`'s scan window constants exactly,
@@ -41,6 +42,83 @@ function sessionsRoot(): string {
   if (explicit) return join(explicit, "sessions");
   const configDir = process.env.PI_CONFIG_DIR?.trim() || ".omp";
   return join(homedir(), configDir, "agent", "sessions");
+}
+
+/** Mirrors `crates/shell/src/preferences.rs`'s `PREFERENCES_VERSION`. */
+const PREFERENCES_VERSION = 1;
+
+/** Mirrors `crates/shell/src/preferences.rs`'s `AppPreferences::default()`. */
+const DEFAULT_APP_PREFERENCES: AppPreferences = {
+  theme: "system",
+  ompPath: null,
+  chromiumPath: null,
+  defaultWorkingDirectory: null,
+};
+
+/**
+ * Pure read of the preferences file at `path`, mirroring
+ * `preferences.rs`'s `read_file`: a missing file, unparseable JSON, or JSON
+ * that isn't an object all yield the defaults. Never writes, so a corrupt
+ * file is left exactly as found.
+ */
+async function readPreferencesFile(path: string): Promise<AppPreferences> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch {
+    return { ...DEFAULT_APP_PREFERENCES };
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) {
+      return { ...DEFAULT_APP_PREFERENCES };
+    }
+    const value = parsed as Record<string, unknown>;
+    return {
+      theme: value.theme === "light" || value.theme === "dark" ? value.theme : "system",
+      ompPath: typeof value.ompPath === "string" ? value.ompPath : null,
+      chromiumPath: typeof value.chromiumPath === "string" ? value.chromiumPath : null,
+      defaultWorkingDirectory:
+        typeof value.defaultWorkingDirectory === "string" ? value.defaultWorkingDirectory : null,
+    };
+  } catch {
+    return { ...DEFAULT_APP_PREFERENCES };
+  }
+}
+
+/**
+ * Overlays `prefs`' known fields (plus `version`) onto whatever JSON object
+ * already exists on disk at `path`, so unknown keys survive, and writes
+ * atomically (tmp file + rename) — mirroring `preferences.rs`'s
+ * `write_file`, so the seam test drives the same on-disk contract the Rust
+ * shell implements.
+ */
+async function writePreferencesFile(path: string, prefs: AppPreferences): Promise<AppPreferences> {
+  let root: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      root = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Missing or unparseable — start from an empty object, same as the Rust side.
+  }
+
+  root = {
+    ...root,
+    theme: prefs.theme ?? "system",
+    ompPath: prefs.ompPath ?? null,
+    chromiumPath: prefs.chromiumPath ?? null,
+    defaultWorkingDirectory: prefs.defaultWorkingDirectory ?? null,
+    version: PREFERENCES_VERSION,
+  };
+
+  await mkdir(dirname(path), { recursive: true });
+  const tmpPath = `${path}.tmp`;
+  await writeFile(tmpPath, JSON.stringify(root, null, 2));
+  await rename(tmpPath, path);
+
+  return readPreferencesFile(path);
 }
 
 interface SessionHeader {
@@ -191,7 +269,16 @@ interface Session {
   cleanup: () => void;
 }
 
-export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
+/** Constructor options `nodeBridge` accepts beyond the binary path and
+ * default cwd. `preferencesPath` is the file the App Preferences seam test
+ * (and controller test) point at — a bridge built without it simply has no
+ * `preferencesRead`/`preferencesWrite` methods (both optional on
+ * `ShellBridge`). */
+export interface NodeBridgeOptions {
+  preferencesPath?: string;
+}
+
+export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeOptions = {}): ShellBridge {
   const sessions = new Map<string, Session>();
   const frameHandlers = new Set<(e: OmpFrameEvent) => void>();
   const exitHandlers = new Set<(e: OmpExitEvent) => void>();
@@ -205,6 +292,8 @@ export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
     const event: OmpExitEvent = { sessionId, code };
     for (const handler of exitHandlers) handler(event);
   };
+
+  const { preferencesPath } = options;
 
   return {
     start(cwdOverride?: string): Promise<OmpStartInfo> {
@@ -314,5 +403,12 @@ export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
     },
 
     readSessionPreview: (path: string) => readSessionPreviewFromDisk(path),
+
+    ...(preferencesPath
+      ? {
+          preferencesRead: () => readPreferencesFile(preferencesPath),
+          preferencesWrite: (prefs: AppPreferences) => writePreferencesFile(preferencesPath, prefs),
+        }
+      : {}),
   };
 }
