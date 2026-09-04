@@ -101,10 +101,13 @@ function assertSettingsSurface(bytes, releaseTag) {
   rmSync(dir, { recursive: true, force: true });
   rmSync(agentDir, { recursive: true, force: true });
   if (schema.status !== 0 || unset.status !== 0) {
-    console.error(
+    // Exit 0 without writing: the workflow's `git diff --quiet -- omp-pin.json`
+    // then reports `changed=false` and opens no PR, instead of paging weekly
+    // on a known, expected state.
+    console.log(
       `${releaseTag} lacks \`omp config schema --json\` / \`omp config unset\` (ADR-0011); keeping the current pin (${pin.releaseBase}). See can1357/oh-my-pi#10847.`,
     );
-    process.exit(1);
+    process.exit(0);
   }
 }
 
