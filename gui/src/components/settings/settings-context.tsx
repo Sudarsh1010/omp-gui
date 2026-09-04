@@ -11,6 +11,7 @@ import type {
   AccountsController,
   AppPreferencesController,
   BrowserShellBridge,
+  ModelsCatalogController,
   SettingsController,
 } from "@omp-gui/ipc";
 
@@ -19,6 +20,7 @@ export interface SettingsContextValue {
   preferences: AppPreferencesController;
   accounts?: AccountsController;
   settings?: SettingsController;
+  models?: ModelsCatalogController;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);

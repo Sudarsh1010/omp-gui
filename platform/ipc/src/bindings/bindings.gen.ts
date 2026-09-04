@@ -224,6 +224,18 @@ export const commands = {
 	 *  `CliError` paths (binary unresolvable/unspawnable).
 	 */
 	authLogout: (providerId: string) => typedError<null, CliError>(__TAURI_INVOKE("auth_logout", { providerId })),
+	/**
+	 *  omp's own model catalog (ADR-0011 "Bespoke sections"): every model
+	 *  across every provider with at least one credential present. Returns
+	 *  `{ models: [] }` — not an error — when omp has no credentials
+	 *  configured at all (note `04-omp-cli-surface.md` §6); the Models section
+	 *  renders that as an empty catalog, not a degraded state.
+	 * 
+	 *  `async`, delegating to `blocking` (`omp_cli.rs`): Tauri runs non-async
+	 *  commands on the main thread, which would freeze the webview for the
+	 *  duration of the `omp models` subprocess.
+	 */
+	modelsList: () => typedError<ModelsCatalog, CliError>(__TAURI_INVOKE("models_list")),
 };
 
 /** Events */
@@ -449,6 +461,59 @@ export type ForeignLockProbe = {
  *  intermediate `serde_json::Value` step).
  */
 export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
+
+/**
+ *  Per-model token cost, USD per million tokens (`omp models --json`'s
+ *  `cost` object; note `04-omp-cli-surface.md` §6).
+ */
+export type ModelCost = {
+	input: number | null,
+	output: number | null,
+	cacheRead: number | null,
+	cacheWrite: number | null,
+};
+
+/**
+ *  One entry from `omp models --json`'s flat `models` array. Only the
+ *  fields the Models section renders are modeled here (provider grouping,
+ *  id/name/selector, context window and cost in mono) — `maxTokens`,
+ *  `reasoning`, `thinking`, `input` exist on omp's own `ModelEntry` but are
+ *  omitted since no row in this section shows them.
+ */
+export type ModelEntry = {
+	/**
+	 *  Provider id, e.g. `"anthropic"` — omp's catalog carries no separate
+	 *  per-provider display name, so the GUI groups by and labels with
+	 *  this id directly.
+	 */
+	provider: string,
+	id: string,
+	/**
+	 *  `"<provider>/<id>"` — the canonical string `enabledModels` patterns
+	 *  and `modelRoles` values use everywhere else in config.
+	 */
+	selector: string,
+	name: string,
+	/**
+	 *  `f64`, not `u64`: specta-typescript refuses to export 64-bit
+	 *  integer types at all (its BigInt guard — see `config.rs`'s
+	 *  `JsonValue` doc comment for the same tradeoff). Token counts here
+	 *  are well under 2^53, so this loses no precision.
+	 */
+	contextWindow: number | null,
+	cost: ModelCost,
+};
+
+/**
+ *  `omp models --json`'s exact envelope (note `04-omp-cli-surface.md` §6):
+ *  `{ "models": [...] }`, a flat array not grouped by provider — the
+ *  Models section groups it client-side. Deserializes directly from omp's
+ *  raw JSON output (field names already match; no intermediate wire type
+ *  is needed, unlike `config.rs`'s `RawConfigValue`).
+ */
+export type ModelsCatalog = {
+	models: ModelEntry[],
+};
 
 /**
  *  What the App Preferences omp-binary row renders: the resolved path and

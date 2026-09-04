@@ -16,6 +16,7 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsAccountsRouteImport } from './routes/settings/accounts'
 import { Route as SettingsAdvancedRouteImport } from './routes/settings/advanced'
 import { Route as SettingsAppPreferencesRouteImport } from './routes/settings/app-preferences'
+import { Route as SettingsModelsRouteImport } from './routes/settings/models'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +53,11 @@ const SettingsAppPreferencesRoute = SettingsAppPreferencesRouteImport.update({
   path: '/app-preferences',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsModelsRoute = SettingsModelsRouteImport.update({
+  id: '/models',
+  path: '/models',
+  getParentRoute: () => SettingsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -60,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/settings/accounts': typeof SettingsAccountsRoute
   '/settings/advanced': typeof SettingsAdvancedRoute
   '/settings/app-preferences': typeof SettingsAppPreferencesRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/settings/accounts': typeof SettingsAccountsRoute
   '/settings/advanced': typeof SettingsAdvancedRoute
   '/settings/app-preferences': typeof SettingsAppPreferencesRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings': typeof SettingsIndexRoute
 }
 export interface FileRoutesById {
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/settings/accounts': typeof SettingsAccountsRoute
   '/settings/advanced': typeof SettingsAdvancedRoute
   '/settings/app-preferences': typeof SettingsAppPreferencesRoute
+  '/settings/models': typeof SettingsModelsRoute
   '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRouteTypes {
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/settings/accounts'
     | '/settings/advanced'
     | '/settings/app-preferences'
+    | '/settings/models'
     | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -97,6 +107,7 @@ export interface FileRouteTypes {
     | '/settings/accounts'
     | '/settings/advanced'
     | '/settings/app-preferences'
+    | '/settings/models'
     | '/settings'
   id:
     | '__root__'
@@ -106,6 +117,7 @@ export interface FileRouteTypes {
     | '/settings/accounts'
     | '/settings/advanced'
     | '/settings/app-preferences'
+    | '/settings/models'
     | '/settings/'
   fileRoutesById: FileRoutesById
 }
@@ -166,6 +178,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppPreferencesRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/models': {
+      id: '/settings/models'
+      path: '/models'
+      fullPath: '/settings/models'
+      preLoaderRoute: typeof SettingsModelsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
   }
 }
 
@@ -173,6 +192,7 @@ interface SettingsRouteChildren {
   SettingsAccountsRoute: typeof SettingsAccountsRoute
   SettingsAdvancedRoute: typeof SettingsAdvancedRoute
   SettingsAppPreferencesRoute: typeof SettingsAppPreferencesRoute
+  SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
@@ -180,6 +200,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAccountsRoute: SettingsAccountsRoute,
   SettingsAdvancedRoute: SettingsAdvancedRoute,
   SettingsAppPreferencesRoute: SettingsAppPreferencesRoute,
+  SettingsModelsRoute: SettingsModelsRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
 
