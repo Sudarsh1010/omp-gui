@@ -117,6 +117,7 @@ describe("buildSchemaView", () => {
     const images = view.tabs[0].groups.find((g) => g.name === "Images")!;
     expect(images.terminalOnly).toBe(true);
     expect(images.rows[0].terminalOnly).toBe(true);
+    expect(images.rows[0].visible).toBe(true);
 
     const mixed = view.tabs[0].groups.find((g) => g.name === "Mixed")!;
     expect(mixed.terminalOnly).toBe(false);

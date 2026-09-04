@@ -25,10 +25,11 @@ export interface SchemaRowView {
    * rendered at all (issue #19 story #18), never rendered disabled. */
   visible: boolean;
   /** `tui.*`-prefixed key, or a `terminal`-kind condition — issue #19
-   * story #15's "Terminal only" marking. A terminal-conditioned row is
-   * always invisible in the GUI (`evaluateCondition` never satisfies a
-   * `terminal` condition here) but is still marked, not silently vanished,
-   * so a group made entirely of such rows still earns the badge. */
+   * story #15's "Terminal only" marking. `evaluateCondition` never hides
+   * a terminal-conditioned row (visibility isn't the GUI's call to make),
+   * so this flag is how the caller marks it instead — a "Terminal only"
+   * badge beside the row, and on the group when every row in it is
+   * terminal-only. */
   terminalOnly: boolean;
   /** `value.value` differs from `entry.default` (JSON-deep equality). */
   modified: boolean;

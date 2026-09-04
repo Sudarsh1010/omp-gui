@@ -15,11 +15,11 @@
  * - `platform`: compares to the GUI's own OS, supplied by the caller
  *   (`gui/src/settings/platform.ts`) since this package has no DOM/OS
  *   access of its own.
- * - `terminal`: always `false` in the GUI — there is no terminal capability
- *   to query from a webview. The row is not hidden for this reason alone;
- *   `schema-view.ts` marks it `terminalOnly` instead of dropping it, since
- *   a `terminal` condition is itself the strongest terminal-only signal
- *   the schema carries.
+ * - `terminal`: always `true` in the GUI — whether a terminal capability
+ *   like an image protocol is available is not the GUI's call to make; a
+ *   `terminal` condition never hides a row here. `schema-view.ts` marks
+ *   the row `terminalOnly` instead, so the GUI still visibly flags it as
+ *   a TUI-only setting rather than pretending it doesn't exist.
  */
 import type { ConfigEntry, JsonValue, SchemaCondition } from "../bindings/bindings.gen";
 
@@ -77,8 +77,9 @@ export function evaluateCondition(
     case "platform":
       return env.platform === condition.platform;
     case "terminal":
-      // No terminal exists in the GUI; `schema-view.ts` marks the row
-      // `terminalOnly` instead of relying on visibility to convey that.
-      return false;
+      // Whether a terminal capability is available is not the GUI's
+      // call — `schema-view.ts` marks the row `terminalOnly` instead of
+      // hiding it here.
+      return true;
   }
 }

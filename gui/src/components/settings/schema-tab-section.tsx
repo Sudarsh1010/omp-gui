@@ -2,10 +2,15 @@
  * One omp settings tab, rendered generically from `config schema --json`
  * (#26, issue #19; ADR-0011 §"schema/structure"): groups render as
  * `SettingsGroup` cards in `TAB_GROUPS` order, each row's editor chosen by
- * `SchemaEntry.type`/`options`, and a dependent row (`condition`) appears
- * or disappears live as its parent changes — `buildSchemaView` is rebuilt
- * from scratch on every `entries` change, so there is nothing to
- * invalidate (issue #19 story #18).
+ * `pickEditor` (`editors/config-editor.tsx`, shared with `advanced-
+ * section.tsx`) from `SchemaEntry.type`/`options`, and a dependent row
+ * (`condition`) appears or disappears live as its parent changes —
+ * `buildSchemaView` is rebuilt from scratch on every `entries` change, so
+ * there is nothing to invalidate (issue #19 story #18). A terminal-
+ * conditioned row is never hidden by its condition (that isn't the GUI's
+ * call) — it renders with a "Terminal only" `Badge` beside its label
+ * (`row.terminalOnly`), same as a `tui.*`-prefixed key; the group also
+ * carries the badge when every row in it is terminal-only.
  *
  * A key claimed by a section with no tab home of its own (`models`) is
  * absent from `buildSchemaView`'s groups entirely (`claimed` below excludes
@@ -17,18 +22,11 @@
  * consulted per row so it renders there once, in place of the generic
  * per-type editor, never as a second copy anywhere else.
  */
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
-import {
-  buildSchemaView,
-  type ConfigEntry,
-  type SchemaEntry,
-  type SchemaRowView,
-} from "@omp-gui/ipc";
+import { buildSchemaView, type SchemaRowView } from "@omp-gui/ipc";
 import { Badge } from "@omp-gui/ui/components/badge";
-import { Button } from "@omp-gui/ui/components/button";
 import { useSettingsContext } from "./settings-context";
 import { useSettings } from "@gui/settings/use-settings";
 import { useConfigSchema } from "@gui/settings/use-config-schema";
@@ -39,14 +37,9 @@ import { SettingsRow, rowStatusFromState, type RowStatus } from "./settings-row"
 import { SectionSkeleton } from "./section-skeleton";
 import { SectionError } from "./section-error";
 import { SessionsNote } from "./sessions-note";
+import { UnsetButton } from "./unset-button";
 import { CLAIMED_KEYS } from "./claims";
-import { SwitchEditor } from "./editors/switch-editor";
-import { NumberEditor } from "./editors/number-editor";
-import { TextEditor } from "./editors/text-editor";
-import { JsonEditor } from "./editors/json-editor";
-import { SecretEditor } from "./editors/secret-editor";
-import { SelectEditor, type SelectOption } from "./editors/select-editor";
-import { MultiSelectEditor } from "./editors/multi-select-editor";
+import { pickEditor, useLocalConfigErrors } from "./editors/config-editor";
 import { ApprovalPolicyEditor } from "./bespoke/approval-policy-editor";
 import { FallbackChainsEditor } from "./bespoke/fallback-chains-editor";
 import { ProviderLimitsEditor } from "./bespoke/provider-limits-editor";
@@ -64,31 +57,6 @@ export interface SchemaTabSectionProps {
   tabId: string;
 }
 
-/** Resolves `SchemaEntry.options` into `{value,label,description}` rows
- * when the schema names an array of submenu choices; `undefined` for
- * `null` or the literal `"runtime"` marker (the caller falls back to a
- * free-text field for that case, and to `SchemaEntry.values` for a plain
- * enum with no `options` array). */
-function optionsFromEntry(entry: SchemaEntry): SelectOption[] | undefined {
-  if (!Array.isArray(entry.options)) return undefined;
-  const options: SelectOption[] = [];
-  for (const item of entry.options) {
-    if (
-      item !== null &&
-      typeof item === "object" &&
-      !Array.isArray(item) &&
-      typeof item.value === "string"
-    ) {
-      options.push({
-        value: item.value,
-        label: typeof item.label === "string" ? item.label : item.value,
-        description: typeof item.description === "string" ? item.description : undefined,
-      });
-    }
-  }
-  return options;
-}
-
 export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
   const { bridge, settings } = useSettingsContext();
   if (!settings) {
@@ -101,7 +69,7 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
   const schemaState = useConfigSchema(bridge);
   const useBundled = useBundledOmp();
   const navigate = useNavigate();
-  const [localErrors, setLocalErrors] = useState<ReadonlyMap<string, string>>(new Map());
+  const { localErrors, setLocalError } = useLocalConfigErrors();
 
   // Only fully excludes keys claimed by a section with no tab home of its
   // own (e.g. `models`) — a `"tab:<id>"` claim (#29's bespoke editors)
@@ -170,70 +138,6 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
     );
   }
 
-  function setLocalError(key: string, message: string | undefined) {
-    setLocalErrors((prev) => {
-      const next = new Map(prev);
-      if (message) next.set(key, message);
-      else next.delete(key);
-      return next;
-    });
-  }
-
-  function renderEditor(
-    entry: SchemaEntry,
-    value: ConfigEntry,
-    rejected: string | undefined,
-  ): ReactNode {
-    const onSet = (next: unknown) => {
-      setLocalError(entry.key, undefined);
-      void controller.set(entry.key, next);
-    };
-    const onInvalid = (message: string | undefined) => setLocalError(entry.key, message);
-
-    if (entry.secret) {
-      return <SecretEditor entry={value} onSet={onSet} />;
-    }
-    switch (entry.type) {
-      case "boolean":
-        return <SwitchEditor entry={value} onSet={onSet} />;
-      case "enum": {
-        const options =
-          optionsFromEntry(entry) ?? (entry.values ?? []).map((v) => ({ value: v, label: v }));
-        return <SelectEditor entry={value} options={options} onSet={onSet} />;
-      }
-      case "number":
-        return <NumberEditor key={rejected} entry={value} onSet={onSet} />;
-      case "string": {
-        if (entry.options === "runtime") {
-          return <TextEditor key={rejected} entry={value} onSet={onSet} />;
-        }
-        const options = optionsFromEntry(entry);
-        return options ? (
-          <SelectEditor entry={value} options={options} onSet={onSet} />
-        ) : (
-          <TextEditor key={rejected} entry={value} onSet={onSet} />
-        );
-      }
-      case "array": {
-        const options = optionsFromEntry(entry);
-        return options ? (
-          <MultiSelectEditor
-            entry={value}
-            options={options}
-            ordered={entry.ordered}
-            onSet={onSet}
-          />
-        ) : (
-          <JsonEditor key={rejected} entry={value} onSet={onSet} onInvalid={onInvalid} />
-        );
-      }
-      case "record":
-        return <JsonEditor key={rejected} entry={value} onSet={onSet} onInvalid={onInvalid} />;
-      default:
-        return <TextEditor key={rejected} entry={value} onSet={onSet} />;
-    }
-  }
-
   function renderRow(row: SchemaRowView): ReactNode {
     if (!row.visible || !row.value) return null;
     const { entry, value } = row;
@@ -252,6 +156,11 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
       entry.options === "runtime" && entry.description
         ? `${entry.description} (choices resolved at runtime — type the value directly.)`
         : (entry.description ?? undefined);
+    const onSet = (next: unknown) => {
+      setLocalError(entry.key, undefined);
+      void controller.set(entry.key, next);
+    };
+    const onInvalid = (message: string | undefined) => setLocalError(entry.key, message);
 
     return (
       <SettingsRow
@@ -260,23 +169,20 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
         label={entry.label ?? entry.key}
         description={description}
         warning={entry.warning ?? undefined}
+        badge={row.terminalOnly ? <Badge variant="outline">Terminal only</Badge> : undefined}
         keyPath={entry.key}
         modified={row.modified}
         status={status}
       >
-        {row.modified && (
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Reset to default"
-            title="Reset to default"
-            className="opacity-0 group-hover:opacity-100"
-            onClick={() => void controller.unset(entry.key)}
-          >
-            <ArrowCounterClockwiseIcon />
-          </Button>
-        )}
-        {renderEditor(entry, value, rejected)}
+        {row.modified && <UnsetButton onUnset={() => void controller.unset(entry.key)} />}
+        {pickEditor({
+          value,
+          valueType: entry.type,
+          schema: entry,
+          rejected,
+          onSet,
+          onInvalid,
+        })}
       </SettingsRow>
     );
   }

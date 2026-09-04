@@ -36,6 +36,10 @@ export interface SettingsRowProps {
    * for a setting that "can get the user rate-limited, flagged, or
    * banned", per the schema's own doc comment for the field. */
   warning?: string;
+  /** Extra inline marker rendered beside the label, e.g. a "Terminal
+   * only" `Badge` (#26 issue #19 story #15) — distinct from `status`,
+   * which always sits beside the control. */
+  badge?: ReactNode;
   /** The underlying config key path, e.g. `browser.chromiumPath` — shown
    * in mono on hover only, never always-visible (issue #19 "Row shape"). */
   keyPath?: string;
@@ -51,6 +55,7 @@ export function SettingsRow({
   label,
   description,
   warning,
+  badge,
   keyPath,
   modified,
   status,
@@ -76,8 +81,9 @@ export function SettingsRow({
               className="size-1.5 shrink-0 rounded-full bg-muted-foreground"
             />
           )}
+          {badge}
           {keyPath && (
-            <span className="hidden font-mono text-[10px] text-muted-foreground group-hover:inline">
+            <span className="hidden font-mono text-[11px] text-muted-foreground group-hover:inline">
               {keyPath}
             </span>
           )}

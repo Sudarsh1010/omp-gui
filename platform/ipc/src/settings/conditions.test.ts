@@ -96,14 +96,14 @@ describe("evaluateCondition", () => {
     ).toBe(true);
   });
 
-  it("terminal kind: always false in the GUI, regardless of reported capabilities", () => {
+  it("terminal kind: always true — a terminal capability is not the GUI's call to decide visibility on", () => {
     const condition: SchemaCondition = { kind: "terminal", capability: "imageProtocol" };
-    expect(evaluateCondition(condition, new Map(), env)).toBe(false);
+    expect(evaluateCondition(condition, new Map(), env)).toBe(true);
     expect(
       evaluateCondition(condition, new Map(), {
         platform: "linux",
         terminalCapabilities: new Set(["imageProtocol"]),
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
