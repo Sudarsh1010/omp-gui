@@ -303,6 +303,19 @@ export class SmokeTestError extends Error {
 /** Per-stage timeout, mirroring `smoke.rs`'s `STAGE_TIMEOUT`. */
 const SMOKE_TIMEOUT_MS = 10_000;
 
+/** Merges `PI_CODING_AGENT_DIR` into `process.env` when `agentDir` is
+ * given; otherwise returns `process.env` untouched — the one env-merge
+ * every spawn in this module shares. */
+function spawnEnv(agentDir: string | undefined): NodeJS.ProcessEnv {
+  return agentDir ? { ...process.env, PI_CODING_AGENT_DIR: agentDir } : process.env;
+}
+
+/** `<binaryPath> --version`, trimmed, run with `env` — the one version
+ * probe every caller in this module shares. */
+function readVersion(binaryPath: string, env: NodeJS.ProcessEnv): string {
+  return execFileSync(binaryPath, ["--version"], { encoding: "utf8", env }).trim();
+}
+
 /**
  * TypeScript mirror of `crates/shell/src/smoke.rs`'s `smoke_test`: spawn
  * `<binaryPath> --mode rpc-ui` in a fresh scratch cwd with
@@ -392,7 +405,7 @@ async function smokeTestBinary(binaryPath: string): Promise<SmokeReport> {
       session.close();
     }
 
-    const version = execFileSync(binaryPath, ["--version"], { encoding: "utf8" }).trim();
+    const version = readVersion(binaryPath, process.env);
     return { version };
   } finally {
     child.kill();
@@ -400,10 +413,9 @@ async function smokeTestBinary(binaryPath: string): Promise<SmokeReport> {
   }
 }
 
-/** Raw stdout/stderr of one `runOmpCli` invocation. */
+/** Raw stdout of one `runOmpCli` invocation. */
 interface CliOutput {
   stdout: string;
-  stderr: string;
 }
 
 /**
@@ -431,23 +443,11 @@ async function runOmpCli(
   const scratch = await mkdtemp(join(tmpdir(), "omp-gui-config-scratch-"));
   try {
     return await new Promise<CliOutput>((resolve, reject) => {
-      let child: ChildProcess;
-      try {
-        child = spawn(binaryPath, args, {
-          cwd: scratch,
-          env: agentDir ? { ...process.env, PI_CODING_AGENT_DIR: agentDir } : process.env,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-      } catch (error) {
-        reject(
-          new BridgeCommandError<CliError>({
-            type: "unavailable",
-            stage: "spawn",
-            message: `failed to spawn ${binaryPath}: ${error instanceof Error ? error.message : String(error)}`,
-          }),
-        );
-        return;
-      }
+      const child = spawn(binaryPath, args, {
+        cwd: scratch,
+        env: spawnEnv(agentDir),
+        stdio: ["ignore", "pipe", "pipe"],
+      });
       let stdout = "";
       let stderr = "";
       child.stdout?.on("data", (chunk: Buffer) => {
@@ -471,7 +471,7 @@ async function runOmpCli(
           reject(new BridgeCommandError<CliError>({ type: "rejected", message }));
           return;
         }
-        resolve({ stdout, stderr });
+        resolve({ stdout });
       });
     });
   } finally {
@@ -644,20 +644,17 @@ export function nodeBridge(
   };
 
   const { preferencesPath, agentDir } = options;
-  const spawnEnv = agentDir ? { ...process.env, PI_CODING_AGENT_DIR: agentDir } : process.env;
+  const env = spawnEnv(agentDir);
 
   return {
     async start(cwdOverride?: string): Promise<OmpStartInfo> {
       const sessionId = randomUUID();
       const resolvedCwd = await resolveStartCwd(cwdOverride, cwd, preferencesPath);
-      const version = execFileSync(binaryPath, ["--version"], {
-        encoding: "utf8",
-        env: spawnEnv,
-      }).trim();
+      const version = readVersion(binaryPath, env);
       const child = spawn(binaryPath, ["--mode", "rpc-ui"], {
         cwd: resolvedCwd,
         stdio: ["pipe", "pipe", "inherit"],
-        env: spawnEnv,
+        env,
       });
 
       if (!child.stdin || !child.stdout) {

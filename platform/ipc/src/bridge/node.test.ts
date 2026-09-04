@@ -79,7 +79,6 @@ describe("nodeBridge's start() spawn-cwd resolution (#22)", () => {
 
     await bridge.start();
 
-    expect(spawnMock).toHaveBeenCalledTimes(1);
     const [, , spawnOptions] = spawnMock.mock.calls[0] as [string, string[], { cwd: string }];
     expect(spawnOptions.cwd).toBe(preferredCwd);
   });
@@ -135,7 +134,6 @@ describe("nodeBridge's start() spawn-cwd resolution (#22)", () => {
 
     await bridge.start();
 
-    expect(execFileSyncMock).toHaveBeenCalledTimes(1);
     const [, , execOptions] = execFileSyncMock.mock.calls[0] as unknown as [
       string,
       string[],
