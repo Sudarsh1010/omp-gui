@@ -14,19 +14,22 @@
  * (`schemaState.status === "unavailable"`), `uilessKeys` stays `undefined`
  * and every key `configList()` reports renders here — ADR-0011's
  * guaranteed Advanced-only fallback so an old override degrades instead
- * of going blank.
+ * of going blank, with a one-line note explaining why every key is
+ * listed rather than just the schema's uiless set.
  *
  * A key claimed by a bespoke section (`claims.ts`) renders as a pointer
  * row — "Edited in <label>" plus a `Link` to that section — instead of a
- * second editor. Every other row's editor is chosen by `ConfigEntry
- * .valueType`, upgraded to a write-only field when `redacted` or the
- * schema marks it `secret`, and to a `Select` when the schema (once
- * loaded) names the key's enum choices.
+ * second editor. Every other row's editor is `pickEditor`'s choice
+ * (`editors/config-editor.tsx`, shared with `schema-tab-section.tsx`),
+ * keyed by `ConfigEntry.valueType` and upgraded with schema metadata
+ * (secret/enum choices/options) once the schema resolves; `modified` and
+ * the hover "Reset to default" action (`UnsetButton`) only render once a
+ * schema default is known to compare against.
  */
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { ConfigEntry } from "@omp-gui/ipc";
+import { jsonValueEquals, type ConfigEntry } from "@omp-gui/ipc";
 import { useSettingsContext } from "./settings-context";
 import { useSettings } from "@gui/settings/use-settings";
 import { useConfigSchema } from "@gui/settings/use-config-schema";
@@ -36,14 +39,10 @@ import { SettingsRow, rowStatusFromState, type RowStatus } from "./settings-row"
 import { SectionSkeleton } from "./section-skeleton";
 import { SectionError } from "./section-error";
 import { SessionsNote } from "./sessions-note";
+import { UnsetButton } from "./unset-button";
 import { CLAIMED_KEYS } from "./claims";
 import type { SectionId } from "./sections";
-import { SwitchEditor } from "./editors/switch-editor";
-import { NumberEditor } from "./editors/number-editor";
-import { TextEditor } from "./editors/text-editor";
-import { JsonEditor } from "./editors/json-editor";
-import { SecretEditor } from "./editors/secret-editor";
-import { SelectEditor } from "./editors/select-editor";
+import { pickEditor, useLocalConfigErrors } from "./editors/config-editor";
 
 function keyGroup(key: string): string {
   const dot = key.indexOf(".");
@@ -64,7 +63,7 @@ export function AdvancedSection() {
   const schemaState = useConfigSchema(bridge);
   const useBundled = useBundledOmp();
   const navigate = useNavigate();
-  const [localErrors, setLocalErrors] = useState<ReadonlyMap<string, string>>(new Map());
+  const { localErrors, setLocalError } = useLocalConfigErrors();
 
   const schemaByKey = useMemo(
     () =>
@@ -113,107 +112,75 @@ export function AdvancedSection() {
     );
   }
 
-  function setLocalError(key: string, message: string | undefined) {
-    setLocalErrors((prev) => {
-      const next = new Map(prev);
-      if (message) next.set(key, message);
-      else next.delete(key);
-      return next;
-    });
-  }
+  function renderRow(entry: ConfigEntry): ReactNode {
+    const claim = CLAIMED_KEYS[entry.key];
+    if (claim) {
+      return (
+        <SettingsRow
+          key={entry.key}
+          rowKey={`advanced.${entry.key}`}
+          label={entry.key}
+          description={`Edited in ${claim.label}`}
+          keyPath={entry.key}
+        >
+          <Link
+            to={sectionPath(claim.section)}
+            className="text-xs text-foreground underline-offset-2 hover:underline"
+          >
+            {claim.label} →
+          </Link>
+        </SettingsRow>
+      );
+    }
 
-  function renderEditor(entry: ConfigEntry): ReactNode {
     const schemaEntry = schemaByKey?.get(entry.key);
+    const modified = schemaEntry ? !jsonValueEquals(entry.value, schemaEntry.default) : undefined;
+    const localError = localErrors.get(entry.key);
+    const status: RowStatus = localError
+      ? { kind: "rejected", message: localError }
+      : rowStatusFromState(snapshot.rows.get(entry.key));
+    const rejected = snapshot.rows.get(entry.key)?.rejected;
     const onSet = (value: unknown) => {
       setLocalError(entry.key, undefined);
       void controller.set(entry.key, value);
     };
-    // Text/number/JSON editors buffer their own draft text in local
-    // state, so a rejection (which leaves `entries` — and therefore
-    // `saved`/`entry.value` — untouched) can't revert them just by
-    // re-rendering with the same props. Keying on the rejection message
-    // remounts the editor whenever a rejection appears or clears,
-    // resetting its draft back to the entry's last-known-good value
-    // (switch/select need no such key: they read `entry.value` directly
-    // with no local buffer to revert).
-    const rejected = snapshot.rows.get(entry.key)?.rejected;
+    const onInvalid = (message: string | undefined) => setLocalError(entry.key, message);
 
-    if (entry.redacted || schemaEntry?.secret) {
-      return <SecretEditor entry={entry} onSet={onSet} />;
-    }
-    switch (entry.valueType) {
-      case "boolean":
-        return <SwitchEditor entry={entry} onSet={onSet} />;
-      case "enum": {
-        const values = schemaEntry?.values;
-        return values && values.length > 0 ? (
-          <SelectEditor
-            entry={entry}
-            options={values.map((value) => ({ value, label: value }))}
-            onSet={onSet}
-          />
-        ) : (
-          <TextEditor key={rejected} entry={entry} onSet={onSet} />
-        );
-      }
-      case "number":
-        return <NumberEditor key={rejected} entry={entry} onSet={onSet} />;
-      case "array":
-      case "record":
-        return (
-          <JsonEditor
-            key={rejected}
-            entry={entry}
-            onSet={onSet}
-            onInvalid={(message) => setLocalError(entry.key, message)}
-          />
-        );
-      default:
-        return <TextEditor key={rejected} entry={entry} onSet={onSet} />;
-    }
+    return (
+      <SettingsRow
+        key={entry.key}
+        rowKey={`advanced.${entry.key}`}
+        label={entry.key}
+        description={entry.description}
+        keyPath={entry.key}
+        modified={modified}
+        status={status}
+      >
+        {modified && <UnsetButton onUnset={() => void controller.unset(entry.key)} />}
+        {pickEditor({
+          value: entry,
+          valueType: entry.valueType,
+          schema: schemaEntry,
+          rejected,
+          onSet,
+          onInvalid,
+        })}
+      </SettingsRow>
+    );
   }
 
   return (
     <>
+      {schemaState.status === "unavailable" && (
+        <p className="px-1 text-xs text-muted-foreground">
+          This omp predates{" "}
+          <code className="bg-muted px-1 font-mono text-[11px]">config schema</code>; every key is
+          listed here.
+        </p>
+      )}
       {groups.map(([group, entries]) => (
         <SettingsGroup key={group} title={group}>
-          {entries.map((entry) => {
-            const claim = CLAIMED_KEYS[entry.key];
-            if (claim) {
-              return (
-                <SettingsRow
-                  key={entry.key}
-                  rowKey={`advanced.${entry.key}`}
-                  label={entry.key}
-                  description={`Edited in ${claim.label}`}
-                  keyPath={entry.key}
-                >
-                  <Link
-                    to={sectionPath(claim.section)}
-                    className="text-xs text-foreground underline-offset-2 hover:underline"
-                  >
-                    {claim.label} →
-                  </Link>
-                </SettingsRow>
-              );
-            }
-            const localError = localErrors.get(entry.key);
-            const status: RowStatus = localError
-              ? { kind: "rejected", message: localError }
-              : rowStatusFromState(snapshot.rows.get(entry.key));
-            return (
-              <SettingsRow
-                key={entry.key}
-                rowKey={`advanced.${entry.key}`}
-                label={entry.key}
-                description={entry.description}
-                keyPath={entry.key}
-                status={status}
-              >
-                {renderEditor(entry)}
-              </SettingsRow>
-            );
-          })}
+          {entries.map(renderRow)}
         </SettingsGroup>
       ))}
       <SessionsNote />

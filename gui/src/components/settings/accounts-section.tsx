@@ -18,6 +18,7 @@
  * running, per ADR-0011 "Bootstrap independence".
  */
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { SessionsStore } from "@omp-gui/ipc";
 import { Button } from "@omp-gui/ui/components/button";
 import {
@@ -37,6 +38,7 @@ import {
 import { useLogin } from "@gui/session/use-login";
 import { useSessions } from "@gui/session/use-sessions";
 import { useAccounts } from "@gui/settings/use-accounts";
+import { useBundledOmp } from "@gui/settings/use-bundled-omp";
 import { SectionError } from "./section-error";
 import { SectionSkeleton } from "./section-skeleton";
 import { SessionsNote } from "./sessions-note";
@@ -50,6 +52,8 @@ export interface AccountsSectionProps {
 
 export function AccountsSection({ store }: AccountsSectionProps) {
   const { bridge } = useSettingsContext();
+  const useBundled = useBundledOmp();
+  const navigate = useNavigate();
   const accounts = useAccounts(bridge);
   const { activeId, createSession } = useSessions(store);
   const login = useLogin(store, activeId ?? "");
@@ -84,6 +88,8 @@ export function AccountsSection({ store }: AccountsSectionProps) {
         title="Accounts unavailable"
         stage={accounts.error.stage}
         message={accounts.error.message}
+        onUseBundled={() => void useBundled()}
+        onOpenAppPreferences={() => void navigate({ to: "/settings/app-preferences" })}
       />
     );
   }
@@ -118,7 +124,7 @@ export function AccountsSection({ store }: AccountsSectionProps) {
         />
       )}
 
-      <SettingsGroup title="Accounts">
+      <SettingsGroup title="Accounts" rowKey="accounts">
         {accounts.rows.map((row) => (
           <SettingsRow
             key={row.providerId}
