@@ -9,7 +9,19 @@ import { useSettings } from "@gui/settings/use-settings";
 import { useBundledOmp } from "@gui/settings/use-bundled-omp";
 import { useConfigSchema } from "@gui/settings/use-config-schema";
 
+/** Loose `{ row?: string }` shape (#28, issue #19 "Search" — "navigation
+ * scroll-highlights the row"): every Settings route inherits this since
+ * TanStack Router merges a parent's validated search into its
+ * descendants, so `navigate({ to: "/settings/<any tab>", search: { row }
+ * })` typechecks from `settings-layout.tsx`'s `goToHit` regardless of
+ * which section the hit targets, and `use-row-highlight.ts` can read it
+ * from any row in any section via `useSearch({ strict: false })`. */
+function validateSearch(search: Record<string, unknown>): { row?: string } {
+  return { row: typeof search.row === "string" ? search.row : undefined };
+}
+
 export const Route = createFileRoute("/settings")({
+  validateSearch,
   component: SettingsRoute,
 });
 
