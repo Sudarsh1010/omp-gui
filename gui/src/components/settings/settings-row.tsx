@@ -82,7 +82,9 @@ export function SettingsRow({
             </span>
           )}
         </div>
-        {warning && <p className="bg-destructive/10 px-1 py-0.5 text-xs text-destructive">{warning}</p>}
+        {warning && (
+          <p className="bg-destructive/10 px-1 py-0.5 text-xs text-destructive">{warning}</p>
+        )}
         {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
       <div className="flex min-w-0 max-w-[60%] shrink-0 items-center gap-2">
@@ -99,7 +101,9 @@ function RowStatusIndicator({ status }: { status: RowStatus | undefined }) {
     return <span className="text-xs text-muted-foreground">Saved</span>;
   }
   return (
-    <span className="bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">{status.message}</span>
+    <span className="bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
+      {status.message}
+    </span>
   );
 }
 
@@ -108,7 +112,9 @@ function RowStatusIndicator({ status }: { status: RowStatus | undefined }) {
  * (`advanced-section.tsx`, `schema-tab-section.tsx`) so a controller's
  * pending/saved/rejected fields map onto the row's visible state the
  * same way everywhere — `rejected` wins over `saved` over `pending`. */
-export function rowStatusFromState(row: { pending: boolean; saved: boolean; rejected?: string } | undefined): RowStatus {
+export function rowStatusFromState(
+  row: { pending: boolean; saved: boolean; rejected?: string } | undefined,
+): RowStatus {
   if (!row) return { kind: "idle" };
   if (row.rejected) return { kind: "rejected", message: row.rejected };
   if (row.saved) return { kind: "saved" };

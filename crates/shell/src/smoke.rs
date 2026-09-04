@@ -75,7 +75,10 @@ pub struct SmokeFailure {
 
 impl SmokeFailure {
     fn new(stage: SmokeStage, message: impl Into<String>) -> Self {
-        Self { stage, message: message.into() }
+        Self {
+            stage,
+            message: message.into(),
+        }
     }
 }
 
@@ -86,7 +89,8 @@ struct ScratchDir(PathBuf);
 
 impl ScratchDir {
     fn new(label: &str) -> std::io::Result<Self> {
-        let dir = std::env::temp_dir().join(format!("omp-gui-smoke-{label}-{}", uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("omp-gui-smoke-{label}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir)?;
         Ok(Self(dir))
     }
@@ -106,10 +110,16 @@ impl Drop for ScratchDir {
 /// outside the two scratch temp directories it creates and removes.
 pub(crate) fn smoke_test(path: &Path) -> Result<SmokeReport, SmokeFailure> {
     let cwd = ScratchDir::new("cwd").map_err(|e| {
-        SmokeFailure::new(SmokeStage::Launch, format!("could not create a scratch working directory: {e}"))
+        SmokeFailure::new(
+            SmokeStage::Launch,
+            format!("could not create a scratch working directory: {e}"),
+        )
     })?;
     let agent_dir = ScratchDir::new("agent-dir").map_err(|e| {
-        SmokeFailure::new(SmokeStage::Launch, format!("could not create a scratch agent directory: {e}"))
+        SmokeFailure::new(
+            SmokeStage::Launch,
+            format!("could not create a scratch agent directory: {e}"),
+        )
     })?;
 
     let mut child = Command::new(path)
@@ -129,7 +139,12 @@ pub(crate) fn smoke_test(path: &Path) -> Result<SmokeReport, SmokeFailure> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| SmokeFailure::new(SmokeStage::Launch, format!("failed to launch {}: {e}", path.display())))?;
+        .map_err(|e| {
+            SmokeFailure::new(
+                SmokeStage::Launch,
+                format!("failed to launch {}: {e}", path.display()),
+            )
+        })?;
 
     let mut stdin = child.stdin.take().expect("stdin was piped");
     let stdout = child.stdout.take().expect("stdout was piped");
@@ -162,7 +177,11 @@ pub(crate) fn smoke_test(path: &Path) -> Result<SmokeReport, SmokeFailure> {
     result
 }
 
-fn run_sequence(stdin: &mut impl Write, rx: &mpsc::Receiver<String>, path: &Path) -> Result<SmokeReport, SmokeFailure> {
+fn run_sequence(
+    stdin: &mut impl Write,
+    rx: &mpsc::Receiver<String>,
+    path: &Path,
+) -> Result<SmokeReport, SmokeFailure> {
     let ready = wait_for_ready(rx)?;
 
     let supported: Vec<i64> = ready
@@ -172,18 +191,35 @@ fn run_sequence(stdin: &mut impl Write, rx: &mpsc::Receiver<String>, path: &Path
         .unwrap_or_default();
 
     if supported.contains(&2) {
-        send_command(stdin, rx, json!({"type": "negotiate_protocol", "protocolVersion": 2, "id": "smoke-negotiate"}), "smoke-negotiate")?;
+        send_command(
+            stdin,
+            rx,
+            json!({"type": "negotiate_protocol", "protocolVersion": 2, "id": "smoke-negotiate"}),
+            "smoke-negotiate",
+        )?;
     } else if !supported.contains(&1) {
         return Err(SmokeFailure::new(
             SmokeStage::RoundTrip,
-            format!("ready frame advertised no protocol version this app understands: {supported:?}"),
+            format!(
+                "ready frame advertised no protocol version this app understands: {supported:?}"
+            ),
         ));
     }
 
-    send_command(stdin, rx, json!({"type": "get_state", "id": "smoke-get-state"}), "smoke-get-state")?;
+    send_command(
+        stdin,
+        rx,
+        json!({"type": "get_state", "id": "smoke-get-state"}),
+        "smoke-get-state",
+    )?;
 
     let version = query_version(path)
-        .or_else(|| ready.get("version").and_then(Value::as_str).map(str::to_owned))
+        .or_else(|| {
+            ready
+                .get("version")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
         .unwrap_or_else(|| "unknown".to_string());
     Ok(SmokeReport { version })
 }
@@ -196,7 +232,10 @@ fn wait_for_ready(rx: &mpsc::Receiver<String>) -> Result<Value, SmokeFailure> {
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err(SmokeFailure::new(SmokeStage::Ready, "timed out waiting for the omp ready frame"));
+            return Err(SmokeFailure::new(
+                SmokeStage::Ready,
+                "timed out waiting for the omp ready frame",
+            ));
         }
         match rx.recv_timeout(remaining) {
             Ok(line) => {
@@ -208,10 +247,16 @@ fn wait_for_ready(rx: &mpsc::Receiver<String>) -> Result<Value, SmokeFailure> {
                 // Malformed line or a non-ready frame arriving first: keep waiting.
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                return Err(SmokeFailure::new(SmokeStage::Ready, "timed out waiting for the omp ready frame"));
+                return Err(SmokeFailure::new(
+                    SmokeStage::Ready,
+                    "timed out waiting for the omp ready frame",
+                ));
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(SmokeFailure::new(SmokeStage::Ready, "the process exited before sending a ready frame"));
+                return Err(SmokeFailure::new(
+                    SmokeStage::Ready,
+                    "the process exited before sending a ready frame",
+                ));
             }
         }
     }
@@ -221,17 +266,30 @@ fn wait_for_ready(rx: &mpsc::Receiver<String>) -> Result<Value, SmokeFailure> {
 /// `{"type":"response","id":<id>}` frame, ignoring any other frame that
 /// arrives first (side-channel events, stray output) -- the same tolerance
 /// `RpcSession.command` has for interleaved frames.
-fn send_command(stdin: &mut impl Write, rx: &mpsc::Receiver<String>, cmd: Value, id: &str) -> Result<Value, SmokeFailure> {
+fn send_command(
+    stdin: &mut impl Write,
+    rx: &mpsc::Receiver<String>,
+    cmd: Value,
+    id: &str,
+) -> Result<Value, SmokeFailure> {
     let line = serde_json::to_string(&cmd).expect("a smoke command literal always serializes");
     writeln!(stdin, "{line}")
         .and_then(|_| stdin.flush())
-        .map_err(|e| SmokeFailure::new(SmokeStage::RoundTrip, format!("failed to write to stdin: {e}")))?;
+        .map_err(|e| {
+            SmokeFailure::new(
+                SmokeStage::RoundTrip,
+                format!("failed to write to stdin: {e}"),
+            )
+        })?;
 
     let deadline = Instant::now() + STAGE_TIMEOUT;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err(SmokeFailure::new(SmokeStage::RoundTrip, format!("timed out waiting for a response to {id}")));
+            return Err(SmokeFailure::new(
+                SmokeStage::RoundTrip,
+                format!("timed out waiting for a response to {id}"),
+            ));
         }
         match rx.recv_timeout(remaining) {
             Ok(raw) => {
@@ -241,7 +299,10 @@ fn send_command(stdin: &mut impl Write, rx: &mpsc::Receiver<String>, cmd: Value,
                 if frame.get("type").and_then(Value::as_str) == Some("response")
                     && frame.get("id").and_then(Value::as_str) == Some(id)
                 {
-                    let success = frame.get("success").and_then(Value::as_bool).unwrap_or(false);
+                    let success = frame
+                        .get("success")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
                     if !success {
                         let message = frame
                             .get("error")
@@ -256,10 +317,16 @@ fn send_command(stdin: &mut impl Write, rx: &mpsc::Receiver<String>, cmd: Value,
                 // id) is ignored and waiting continues.
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                return Err(SmokeFailure::new(SmokeStage::RoundTrip, format!("timed out waiting for a response to {id}")));
+                return Err(SmokeFailure::new(
+                    SmokeStage::RoundTrip,
+                    format!("timed out waiting for a response to {id}"),
+                ));
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(SmokeFailure::new(SmokeStage::RoundTrip, "the process exited mid round-trip"));
+                return Err(SmokeFailure::new(
+                    SmokeStage::RoundTrip,
+                    "the process exited mid round-trip",
+                ));
             }
         }
     }
@@ -274,7 +341,11 @@ pub(crate) fn query_version(path: &Path) -> Option<String> {
         return None;
     }
     let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if version.is_empty() { None } else { Some(version) }
+    if version.is_empty() {
+        None
+    } else {
+        Some(version)
+    }
 }
 
 #[cfg(test)]
@@ -288,15 +359,24 @@ mod tests {
     #[test]
     fn bundled_binary_passes_and_reports_its_version() {
         let path = dev_binary();
-        assert!(path.is_file(), "expected the pinned dev binary at {}", path.display());
+        assert!(
+            path.is_file(),
+            "expected the pinned dev binary at {}",
+            path.display()
+        );
 
         let report = smoke_test(&path).expect("the pinned omp binary must pass its own smoke test");
-        assert!(report.version.contains("18.1.10"), "unexpected version string: {}", report.version);
+        assert!(
+            report.version.contains("18.1.10"),
+            "unexpected version string: {}",
+            report.version
+        );
     }
 
     #[test]
     fn nonexistent_path_fails_at_launch() {
-        let path = std::env::temp_dir().join(format!("omp-gui-smoke-missing-{}", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("omp-gui-smoke-missing-{}", uuid::Uuid::new_v4()));
         let failure = smoke_test(&path).expect_err("a nonexistent path must fail the smoke test");
         assert_eq!(failure.stage, SmokeStage::Launch);
     }

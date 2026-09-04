@@ -53,7 +53,12 @@ describe("buildSchemaView", () => {
       version: "1",
       tabs: [{ id: "model", label: "Model", groups: ["Thinking", "Sampling", "Advisor"] }],
       settings: [
-        schemaEntry({ key: "sampling.temperature", type: "number", tab: "model", group: "Sampling" }),
+        schemaEntry({
+          key: "sampling.temperature",
+          type: "number",
+          tab: "model",
+          group: "Sampling",
+        }),
         schemaEntry({ key: "advisor.enabled", tab: "model", group: "Advisor" }),
       ],
     };
@@ -67,7 +72,12 @@ describe("buildSchemaView", () => {
       version: "1",
       tabs: [{ id: "model", label: "Model", groups: ["Retry & Fallback"] }],
       settings: [
-        schemaEntry({ key: "retry.fallbackChains", type: "array", tab: "model", group: "Retry & Fallback" }),
+        schemaEntry({
+          key: "retry.fallbackChains",
+          type: "array",
+          tab: "model",
+          group: "Retry & Fallback",
+        }),
       ],
     };
     const view = buildSchemaView(schema, new Map(), new Set(["retry.fallbackChains"]), env);
@@ -143,7 +153,9 @@ describe("buildSchemaView", () => {
     const schema: ConfigSchema = {
       version: "1",
       tabs: [{ id: "model", label: "Model", groups: ["Advisor"] }],
-      settings: [schemaEntry({ key: "advisor.enabled", tab: "model", group: "Advisor", default: false })],
+      settings: [
+        schemaEntry({ key: "advisor.enabled", tab: "model", group: "Advisor", default: false }),
+      ],
     };
     const view = buildSchemaView(schema, new Map(), new Set(), env);
     expect(view.tabs[0].groups[0].rows[0].modified).toBe(false);
@@ -178,8 +190,12 @@ describe("buildSchemaView", () => {
       new Set(),
       env,
     );
-    const dependentOff = off.tabs[0].groups[0].rows.find((r) => r.entry.key === "advisor.immuneTurns")!;
-    const dependentOn = on.tabs[0].groups[0].rows.find((r) => r.entry.key === "advisor.immuneTurns")!;
+    const dependentOff = off.tabs[0].groups[0].rows.find(
+      (r) => r.entry.key === "advisor.immuneTurns",
+    )!;
+    const dependentOn = on.tabs[0].groups[0].rows.find(
+      (r) => r.entry.key === "advisor.immuneTurns",
+    )!;
     expect(dependentOff.visible).toBe(false);
     expect(dependentOn.visible).toBe(true);
   });

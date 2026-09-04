@@ -13,7 +13,13 @@
  */
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import type { SearchHit } from "@omp-gui/ipc";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@omp-gui/ui/components/empty";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@omp-gui/ui/components/empty";
 import { Button } from "@omp-gui/ui/components/button";
 import { SettingsGroup } from "./settings-group";
 
@@ -36,7 +42,11 @@ function groupHits(hits: SearchHit[]): HitGroup[] {
     const key = `${hit.section}:${hit.group ?? ""}`;
     let group = byKey.get(key);
     if (!group) {
-      group = { key, title: hit.group ? `${hit.sectionLabel} › ${hit.group}` : hit.sectionLabel, hits: [] };
+      group = {
+        key,
+        title: hit.group ? `${hit.sectionLabel} › ${hit.group}` : hit.sectionLabel,
+        hits: [],
+      };
       byKey.set(key, group);
       groups.push(group);
     }
@@ -73,12 +83,18 @@ export function SearchResults({ hits, query, onNavigate }: SearchResultsProps) {
               onClick={() => onNavigate(hit)}
               className="h-8 w-full min-w-0 justify-between gap-3 px-3 font-normal"
             >
-              <span className="max-w-[45%] shrink-0 truncate text-xs font-medium text-foreground">{hit.label}</span>
+              <span className="max-w-[45%] shrink-0 truncate text-xs font-medium text-foreground">
+                {hit.label}
+              </span>
               {hit.description && (
-                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{hit.description}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {hit.description}
+                </span>
               )}
               {hit.keyPath && (
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{hit.keyPath}</span>
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                  {hit.keyPath}
+                </span>
               )}
             </Button>
           ))}

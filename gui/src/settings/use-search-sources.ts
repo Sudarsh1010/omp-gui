@@ -21,7 +21,13 @@
  * Settings consumer of those hooks.
  */
 import { useMemo } from "react";
-import { buildSchemaView, buildSearchIndex, type SearchSource, type SettingsController, type ShellBridge } from "@omp-gui/ipc";
+import {
+  buildSchemaView,
+  buildSearchIndex,
+  type SearchSource,
+  type SettingsController,
+  type ShellBridge,
+} from "@omp-gui/ipc";
 import { CLAIMED_KEYS } from "@gui/components/settings/claims";
 import { useSettings } from "./use-settings";
 import { useConfigSchema } from "./use-config-schema";
@@ -56,7 +62,8 @@ const APP_PREFERENCES_SOURCES: SearchSource[] = [
     rowKey: "default-working-directory",
     keyPath: "defaultWorkingDirectory",
     label: "Default working directory",
-    description: "New sessions start here. Resumed sessions always keep their own recorded directory.",
+    description:
+      "New sessions start here. Resumed sessions always keep their own recorded directory.",
   },
   {
     section: "app-preferences",
@@ -66,7 +73,8 @@ const APP_PREFERENCES_SOURCES: SearchSource[] = [
     rowKey: "chromium-path",
     keyPath: "chromiumPath",
     label: "Chromium path",
-    description: "Used by the Browser Pane. An environment variable override always wins over this.",
+    description:
+      "Used by the Browser Pane. An environment variable override always wins over this.",
   },
 ];
 
@@ -118,17 +126,26 @@ export function useSearchSources(bridge: ShellBridge, settings: SettingsControll
   const snapshot = useSettings(settings);
   const schemaState = useConfigSchema(bridge);
   const claimed = useMemo(() => new Set(Object.keys(CLAIMED_KEYS)), []);
-  const env = useMemo(() => ({ platform: detectPlatform(), terminalCapabilities: new Set<string>() }), []);
+  const env = useMemo(
+    () => ({ platform: detectPlatform(), terminalCapabilities: new Set<string>() }),
+    [],
+  );
 
   return useMemo(() => {
-    const sources: SearchSource[] = [...APP_PREFERENCES_SOURCES, ...MODELS_SOURCES, ...ACCOUNTS_SOURCES];
+    const sources: SearchSource[] = [
+      ...APP_PREFERENCES_SOURCES,
+      ...MODELS_SOURCES,
+      ...ACCOUNTS_SOURCES,
+    ];
     if (schemaState.status !== "ready") return buildSearchIndex(sources);
 
     const view = buildSchemaView(schemaState.schema, snapshot.entries, claimed, env);
     for (const tab of view.tabs) {
-      const rows = tab.ungrouped.map((row) => ({ row, group: undefined as string | undefined })).concat(
-        tab.groups.flatMap((group) => group.rows.map((row) => ({ row, group: group.name }))),
-      );
+      const rows = tab.ungrouped
+        .map((row) => ({ row, group: undefined as string | undefined }))
+        .concat(
+          tab.groups.flatMap((group) => group.rows.map((row) => ({ row, group: group.name }))),
+        );
       for (const { row, group } of rows) {
         if (!row.visible) continue;
         sources.push({

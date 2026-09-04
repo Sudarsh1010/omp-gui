@@ -35,7 +35,10 @@ import {
 } from "@omp-gui/ui/components/popover";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import { SignInIcon, UserCircleCheckIcon, UserCircleIcon } from "@phosphor-icons/react";
-import { LoginElicitationCard, useAutoOpenElicitation } from "@gui/components/session/login-elicitation";
+import {
+  LoginElicitationCard,
+  useAutoOpenElicitation,
+} from "@gui/components/session/login-elicitation";
 import { useLogin } from "@gui/session/use-login";
 
 export interface LoginPanelProps {

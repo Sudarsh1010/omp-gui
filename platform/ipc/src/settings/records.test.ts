@@ -26,11 +26,16 @@ describe("setToolPolicy", () => {
   });
 
   it("removes the tool entirely when policy is undefined (Clear / inherits mode)", () => {
-    expect(setToolPolicy({ bash: "deny", eval: "allow" }, "bash", undefined)).toEqual({ eval: "allow" });
+    expect(setToolPolicy({ bash: "deny", eval: "allow" }, "bash", undefined)).toEqual({
+      eval: "allow",
+    });
   });
 
   it("leaves other tools untouched", () => {
-    expect(setToolPolicy({ eval: "prompt" }, "bash", "deny")).toEqual({ eval: "prompt", bash: "deny" });
+    expect(setToolPolicy({ eval: "prompt" }, "bash", "deny")).toEqual({
+      eval: "prompt",
+      bash: "deny",
+    });
   });
 
   it("is a no-op clearing a tool that was never set", () => {
@@ -82,11 +87,15 @@ describe("addChainEntry", () => {
   });
 
   it("creates the key when absent", () => {
-    expect(addChainEntry({}, "smol", "openai/gpt-4o-mini")).toEqual({ smol: ["openai/gpt-4o-mini"] });
+    expect(addChainEntry({}, "smol", "openai/gpt-4o-mini")).toEqual({
+      smol: ["openai/gpt-4o-mini"],
+    });
   });
 
   it("trims the selector", () => {
-    expect(addChainEntry({}, "smol", "  openai/gpt-4o-mini  ")).toEqual({ smol: ["openai/gpt-4o-mini"] });
+    expect(addChainEntry({}, "smol", "  openai/gpt-4o-mini  ")).toEqual({
+      smol: ["openai/gpt-4o-mini"],
+    });
   });
 
   it("is a no-op for a blank selector", () => {
@@ -132,7 +141,9 @@ describe("setProviderLimit", () => {
   });
 
   it("removes the provider when limit is undefined (empty input)", () => {
-    expect(setProviderLimit({ openai: 3, anthropic: 2 }, "openai", undefined)).toEqual({ anthropic: 2 });
+    expect(setProviderLimit({ openai: 3, anthropic: 2 }, "openai", undefined)).toEqual({
+      anthropic: 2,
+    });
   });
 
   it("is a no-op removing a provider that was never set", () => {

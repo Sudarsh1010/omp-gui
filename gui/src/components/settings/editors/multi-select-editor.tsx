@@ -42,7 +42,9 @@ export function MultiSelectEditor({ entry, options, ordered, onSet }: MultiSelec
           {selected.map((value, index) => (
             <div key={value} className="flex items-center gap-1.5 text-xs">
               <span className="w-3 text-right text-[10px] text-muted-foreground">{index + 1}</span>
-              <span className="flex-1 truncate">{options.find((o) => o.value === value)?.label ?? value}</span>
+              <span className="flex-1 truncate">
+                {options.find((o) => o.value === value)?.label ?? value}
+              </span>
               <Button
                 variant="ghost"
                 size="icon-xs"

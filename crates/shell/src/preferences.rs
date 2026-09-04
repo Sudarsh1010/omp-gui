@@ -82,10 +82,14 @@ impl Default for AppPreferences {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum PreferencesError {
-    WriteFailed { message: String },
+    WriteFailed {
+        message: String,
+    },
     /// `preferences_effective` (#22) could not resolve the user's home
     /// directory, the last-resort fallback for the working-directory row.
-    HomeDirUnavailable { message: String },
+    HomeDirUnavailable {
+        message: String,
+    },
 }
 
 impl fmt::Display for PreferencesError {
@@ -328,11 +332,8 @@ pub fn preferences_effective(app: AppHandle) -> Result<EffectivePreferences, Pre
         .map_err(|e| PreferencesError::HomeDirUnavailable {
             message: e.to_string(),
         })?;
-    let (cwd, cwd_source) = crate::omp::resolve_start_cwd(
-        None,
-        prefs.default_working_directory.as_deref(),
-        &home,
-    );
+    let (cwd, cwd_source) =
+        crate::omp::resolve_start_cwd(None, prefs.default_working_directory.as_deref(), &home);
     let working_directory = EffectiveWorkingDirectory {
         value: cwd.display().to_string(),
         source: match cwd_source {

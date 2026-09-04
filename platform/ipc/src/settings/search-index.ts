@@ -57,7 +57,11 @@ const RANK_DESCRIPTION = 3;
 const RANK_SCATTERED = 4;
 
 export function searchSettings(index: SearchIndex, query: string): SearchHit[] {
-  const tokens = query.trim().toLowerCase().split(/\s+/).filter((token) => token.length > 0);
+  const tokens = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
   if (tokens.length === 0) return [];
   const fullQuery = tokens.join(" ");
 

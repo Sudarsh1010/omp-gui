@@ -6,7 +6,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import { buildSearchIndex, searchSettings, type SearchSource } from "./search-index";
 
-function source(overrides: Partial<SearchSource> & Pick<SearchSource, "rowKey" | "label">): SearchSource {
+function source(
+  overrides: Partial<SearchSource> & Pick<SearchSource, "rowKey" | "label">,
+): SearchSource {
   return {
     section: "advanced",
     sectionLabel: "Advanced",
@@ -17,7 +19,9 @@ function source(overrides: Partial<SearchSource> & Pick<SearchSource, "rowKey" |
 
 describe("searchSettings", () => {
   it("returns nothing for a blank or whitespace-only query", () => {
-    const index = buildSearchIndex([source({ rowKey: "retry.maxRetries", label: "Max retries", keyPath: "retry.maxRetries" })]);
+    const index = buildSearchIndex([
+      source({ rowKey: "retry.maxRetries", label: "Max retries", keyPath: "retry.maxRetries" }),
+    ]);
     expect(searchSettings(index, "")).toEqual([]);
     expect(searchSettings(index, "   ")).toEqual([]);
   });
@@ -62,7 +66,11 @@ describe("searchSettings", () => {
 
   it("ranks a key-path exact prefix above a key-path substring match", () => {
     const index = buildSearchIndex([
-      source({ rowKey: "browser.chromiumPath", label: "Chromium path", keyPath: "browser.chromiumPath" }),
+      source({
+        rowKey: "browser.chromiumPath",
+        label: "Chromium path",
+        keyPath: "browser.chromiumPath",
+      }),
       source({ rowKey: "chromiumPath", label: "Legacy Chromium path", keyPath: "chromiumPath" }),
     ]);
     // "chromiumPath" is a substring of both, but a prefix only of the second.
@@ -82,7 +90,11 @@ describe("searchSettings", () => {
 
   it("ranks a label match above a description-only match", () => {
     const index = buildSearchIndex([
-      source({ rowKey: "row-a", label: "Unrelated", description: "Mentions retries somewhere in prose." }),
+      source({
+        rowKey: "row-a",
+        label: "Unrelated",
+        description: "Mentions retries somewhere in prose.",
+      }),
       source({ rowKey: "row-b", label: "Retry policy" }),
     ]);
     expect(searchSettings(index, "retr").map((h) => h.rowKey)).toEqual(["row-b", "row-a"]);

@@ -28,10 +28,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { nodeBridge } from "../bridge/node";
-import { createAccountsController, type AccountsController, type AccountsSnapshot } from "./accounts-controller";
+import {
+  createAccountsController,
+  type AccountsController,
+  type AccountsSnapshot,
+} from "./accounts-controller";
 
 const binary =
-  process.env.OMP_GUI_OMP_PATH ?? join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
+  process.env.OMP_GUI_OMP_PATH ??
+  join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
 
 const FULL_LIST_TIMEOUT_MS = 180_000;
 
@@ -86,16 +91,20 @@ describe("auth bridge methods against the pinned omp binary", () => {
     expect(anthropic?.name).toBeTruthy();
   }, 30_000);
 
-  it("authAccountsList parses to an empty list in a fresh agent dir", async () => {
-    agentDir = mkdtempSync(join(tmpdir(), "omp-gui-agentdir-"));
-    sandbox = mkdtempSync(join(tmpdir(), "omp-gui-test-"));
-    const bridge = nodeBridge(binary, sandbox, { agentDir });
+  it(
+    "authAccountsList parses to an empty list in a fresh agent dir",
+    async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "omp-gui-agentdir-"));
+      sandbox = mkdtempSync(join(tmpdir(), "omp-gui-test-"));
+      const bridge = nodeBridge(binary, sandbox, { agentDir });
 
-    const accounts = await bridge.authAccountsList!();
+      const accounts = await bridge.authAccountsList!();
 
-    expect(Array.isArray(accounts)).toBe(true);
-    expect(accounts).toEqual([]);
-  }, FULL_LIST_TIMEOUT_MS);
+      expect(Array.isArray(accounts)).toBe(true);
+      expect(accounts).toEqual([]);
+    },
+    FULL_LIST_TIMEOUT_MS,
+  );
 
   it("authLogout succeeds against a provider with nothing stored", async () => {
     agentDir = mkdtempSync(join(tmpdir(), "omp-gui-agentdir-"));
@@ -120,39 +129,43 @@ describe("createAccountsController against the pinned omp binary", () => {
     sandbox = undefined;
   });
 
-  it("joins providers with accounts into rows, then logout keeps the snapshot ready", async () => {
-    agentDir = mkdtempSync(join(tmpdir(), "omp-gui-agentdir-"));
-    sandbox = mkdtempSync(join(tmpdir(), "omp-gui-test-"));
-    const bridge = nodeBridge(binary, sandbox, { agentDir });
+  it(
+    "joins providers with accounts into rows, then logout keeps the snapshot ready",
+    async () => {
+      agentDir = mkdtempSync(join(tmpdir(), "omp-gui-agentdir-"));
+      sandbox = mkdtempSync(join(tmpdir(), "omp-gui-test-"));
+      const bridge = nodeBridge(binary, sandbox, { agentDir });
 
-    controller = createAccountsController(bridge);
-    const snapshot = await waitForSnapshot(controller, (s) => s.status !== "loading");
+      controller = createAccountsController(bridge);
+      const snapshot = await waitForSnapshot(controller, (s) => s.status !== "loading");
 
-    expect(snapshot.status).toBe("ready");
-    expect(snapshot.error).toBeUndefined();
-    expect(snapshot.accounts).toEqual([]);
-    expect(snapshot.rows.length).toBeGreaterThan(0);
+      expect(snapshot.status).toBe("ready");
+      expect(snapshot.error).toBeUndefined();
+      expect(snapshot.accounts).toEqual([]);
+      expect(snapshot.rows.length).toBeGreaterThan(0);
 
-    const anthropicRow = snapshot.rows.find((row) => row.providerId === "anthropic");
-    expect(anthropicRow).toBeDefined();
-    expect(anthropicRow?.loggedInAs).toBeNull();
-    for (const row of snapshot.rows) {
-      expect(row.loggedInAs).toBeNull();
-    }
+      const anthropicRow = snapshot.rows.find((row) => row.providerId === "anthropic");
+      expect(anthropicRow).toBeDefined();
+      expect(anthropicRow?.loggedInAs).toBeNull();
+      for (const row of snapshot.rows) {
+        expect(row.loggedInAs).toBeNull();
+      }
 
-    // Independent verification: re-fetch the provider catalog directly,
-    // bypassing the controller's own state, to prove `rows` is a faithful
-    // join of the two bridge calls rather than any invented row.
-    const providers = await bridge.authProvidersList!();
-    expect(snapshot.rows.map((row) => row.providerId).sort()).toEqual(
-      providers.map((p) => p.id).sort(),
-    );
+      // Independent verification: re-fetch the provider catalog directly,
+      // bypassing the controller's own state, to prove `rows` is a faithful
+      // join of the two bridge calls rather than any invented row.
+      const providers = await bridge.authProvidersList!();
+      expect(snapshot.rows.map((row) => row.providerId).sort()).toEqual(
+        providers.map((p) => p.id).sort(),
+      );
 
-    // `logout` shells out (no session needed) and reloads — the snapshot
-    // stays "ready" with no error rather than getting stuck mid-flight.
-    await controller.logout("anthropic");
-    const afterLogout = controller.snapshot();
-    expect(afterLogout.status).toBe("ready");
-    expect(afterLogout.error).toBeUndefined();
-  }, FULL_LIST_TIMEOUT_MS * 2);
+      // `logout` shells out (no session needed) and reloads — the snapshot
+      // stays "ready" with no error rather than getting stuck mid-flight.
+      await controller.logout("anthropic");
+      const afterLogout = controller.snapshot();
+      expect(afterLogout.status).toBe("ready");
+      expect(afterLogout.error).toBeUndefined();
+    },
+    FULL_LIST_TIMEOUT_MS * 2,
+  );
 });

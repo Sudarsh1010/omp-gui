@@ -6,7 +6,5 @@ import { Switch } from "@omp-gui/ui/components/switch";
 import type { ConfigEditorProps } from "./config-editor";
 
 export function SwitchEditor({ entry, onSet }: ConfigEditorProps) {
-  return (
-    <Switch checked={entry.value === true} onCheckedChange={(checked) => onSet(checked)} />
-  );
+  return <Switch checked={entry.value === true} onCheckedChange={(checked) => onSet(checked)} />;
 }

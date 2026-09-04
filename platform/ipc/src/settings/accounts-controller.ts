@@ -78,7 +78,10 @@ function authBridge(
 
 /** Joins providers with accounts into one row per provider, `loggedInAs`
  * the lowest-`position` (first) stored account's identity or `null`. */
-function buildRows(providers: readonly AuthProvider[], accounts: readonly AuthAccount[]): AccountRow[] {
+function buildRows(
+  providers: readonly AuthProvider[],
+  accounts: readonly AuthAccount[],
+): AccountRow[] {
   const firstAccountByProvider = new Map<string, AuthAccount>();
   for (const account of accounts) {
     const current = firstAccountByProvider.get(account.providerId);

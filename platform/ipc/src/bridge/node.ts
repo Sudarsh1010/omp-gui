@@ -7,7 +7,17 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { open, readdir, stat, readFile, writeFile, mkdir, rename, mkdtemp, rm } from "node:fs/promises";
+import {
+  open,
+  readdir,
+  stat,
+  readFile,
+  writeFile,
+  mkdir,
+  rename,
+  mkdtemp,
+  rm,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { BridgeCommandError, type ShellBridge, type OmpStartInfo } from "./shell-bridge";
@@ -499,7 +509,10 @@ interface RawConfigValue {
   redacted?: boolean;
 }
 
-async function listConfigEntries(binaryPath: string, agentDir: string | undefined): Promise<ConfigEntry[]> {
+async function listConfigEntries(
+  binaryPath: string,
+  agentDir: string | undefined,
+): Promise<ConfigEntry[]> {
   const raw = await runOmpJson<Record<string, RawConfigValue>>(
     binaryPath,
     ["config", "list", "--json"],
@@ -611,7 +624,11 @@ function parseAccountLines(stdout: string, providerId: string): AuthAccount[] {
   return accounts;
 }
 
-export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeOptions = {}): ShellBridge {
+export function nodeBridge(
+  binaryPath: string,
+  cwd: string,
+  options: NodeBridgeOptions = {},
+): ShellBridge {
   const sessions = new Map<string, Session>();
   const frameHandlers = new Set<(e: OmpFrameEvent) => void>();
   const exitHandlers = new Set<(e: OmpExitEvent) => void>();
@@ -762,15 +779,24 @@ export function nodeBridge(binaryPath: string, cwd: string, options: NodeBridgeO
     configUnset: async (key: string) => {
       await runOmpCli(binaryPath, ["config", "unset", key, "--json"], agentDir);
     },
-    configSchema: () => runOmpJson<ConfigSchema>(binaryPath, ["config", "schema", "--json"], agentDir),
+    configSchema: () =>
+      runOmpJson<ConfigSchema>(binaryPath, ["config", "schema", "--json"], agentDir),
     authProvidersList: () =>
       runOmpJson<AuthProvider[]>(binaryPath, ["auth-broker", "list", "--json"], agentDir),
     async authAccountsList(): Promise<AuthAccount[]> {
-      const providers = await runOmpJson<AuthProvider[]>(binaryPath, ["auth-broker", "list", "--json"], agentDir);
+      const providers = await runOmpJson<AuthProvider[]>(
+        binaryPath,
+        ["auth-broker", "list", "--json"],
+        agentDir,
+      );
       const accounts: AuthAccount[] = [];
       for (const provider of providers) {
         try {
-          const { stdout } = await runOmpCli(binaryPath, ["token", provider.id, "--list"], agentDir);
+          const { stdout } = await runOmpCli(
+            binaryPath,
+            ["token", provider.id, "--list"],
+            agentDir,
+          );
           accounts.push(...parseAccountLines(stdout, provider.id));
         } catch {
           // No accounts stored for this provider (or some other

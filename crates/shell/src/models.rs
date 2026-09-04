@@ -7,7 +7,7 @@
 //! bridge (`config.rs`), never a second store here — ADR-0011's "no key
 //! ever has two editors" is exactly what this split avoids.
 
-use crate::omp_cli::{blocking, run_omp_json, CliError};
+use crate::omp_cli::{CliError, blocking, run_omp_json};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::AppHandle;

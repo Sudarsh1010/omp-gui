@@ -183,56 +183,68 @@ export function OmpBinaryRow() {
   return (
     <>
       <SettingsRow rowKey="omp-binary" label="Which omp the app runs" keyPath="ompPath">
-          <div className="flex w-full max-w-sm flex-col items-end gap-2">
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <span className="max-w-sm truncate font-mono text-[11px] text-muted-foreground" title={info?.path || undefined}>
-                {info?.path || "resolving…"}
+        <div className="flex w-full max-w-sm flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span
+              className="max-w-sm truncate font-mono text-[11px] text-muted-foreground"
+              title={info?.path || undefined}
+            >
+              {info?.path || "resolving…"}
+            </span>
+            {info?.version && <span className="text-xs text-muted-foreground">{info.version}</span>}
+            <Badge variant="outline">{sourceBadgeLabel(info?.source)}</Badge>
+            {info?.source === "preferenceOverride" && info.version === null && (
+              <span className="bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
+                unavailable
               </span>
-              {info?.version && <span className="text-xs text-muted-foreground">{info.version}</span>}
-              <Badge variant="outline">{sourceBadgeLabel(info?.source)}</Badge>
-              {info?.source === "preferenceOverride" && info.version === null && (
-                <span className="bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">unavailable</span>
-              )}
-            </div>
-            {info?.envOverrideActive && (
-              <p className="max-w-sm text-right text-xs text-muted-foreground">
-                OMP_GUI_OMP_PATH is set and always wins over a committed override.
-              </p>
             )}
-            <div className="flex w-full max-w-sm items-center gap-2">
-              <Input
-                value={draftPath}
-                onChange={(event) => setDraftPath(event.target.value)}
-                placeholder={`Bundled (${info?.bundledVersion ?? "18.1.10"})`}
-                className="font-mono text-[11px]"
-                disabled={running}
-              />
-              {running ? (
-                <Spinner />
-              ) : (
-                hasDraftChange && (
-                  <Button size="sm" variant="outline" onClick={() => void handleTestAndUse()}>
-                    Test & use
-                  </Button>
-                )
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" disabled={running || !canRevert} onClick={() => void handleUseBundled()}>
-                Use bundled omp
-              </Button>
-              {run.kind === "idle" && info?.source === "preferenceOverride" && info.version !== null && (
+          </div>
+          {info?.envOverrideActive && (
+            <p className="max-w-sm text-right text-xs text-muted-foreground">
+              OMP_GUI_OMP_PATH is set and always wins over a committed override.
+            </p>
+          )}
+          <div className="flex w-full max-w-sm items-center gap-2">
+            <Input
+              value={draftPath}
+              onChange={(event) => setDraftPath(event.target.value)}
+              placeholder={`Bundled (${info?.bundledVersion ?? "18.1.10"})`}
+              className="font-mono text-[11px]"
+              disabled={running}
+            />
+            {running ? (
+              <Spinner />
+            ) : (
+              hasDraftChange && (
+                <Button size="sm" variant="outline" onClick={() => void handleTestAndUse()}>
+                  Test & use
+                </Button>
+              )
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={running || !canRevert}
+              onClick={() => void handleUseBundled()}
+            >
+              Use bundled omp
+            </Button>
+            {run.kind === "idle" &&
+              info?.source === "preferenceOverride" &&
+              info.version !== null && (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <CheckCircleIcon className="size-3.5" /> in use
                 </span>
               )}
-            </div>
-            {run.kind === "failed" && (
-              <span className="max-w-sm bg-destructive/10 px-1.5 py-0.5 text-right text-xs text-destructive">
-                {run.failure.stage}: {run.failure.message}
-              </span>
-            )}
           </div>
+          {run.kind === "failed" && (
+            <span className="max-w-sm bg-destructive/10 px-1.5 py-0.5 text-right text-xs text-destructive">
+              {run.failure.stage}: {run.failure.message}
+            </span>
+          )}
+        </div>
       </SettingsRow>
 
       <AlertDialog
@@ -245,10 +257,11 @@ export function OmpBinaryRow() {
           <AlertDialogHeader>
             <AlertDialogTitle>Use a non-bundled omp?</AlertDialogTitle>
             <AlertDialogDescription>
-              <span className="font-mono text-xs">{pending?.path}</span> (omp {pending?.version}) passed the
-              launch-time protocol smoke test, but it is not the pinned version this app is tested against. The
-              rpc-ui wire surface is version-negotiated, not frozen — an incompatible release can behave
-              unexpectedly or fail mid-session. Use bundled omp at any time to revert.
+              <span className="font-mono text-xs">{pending?.path}</span> (omp {pending?.version})
+              passed the launch-time protocol smoke test, but it is not the pinned version this app
+              is tested against. The rpc-ui wire surface is version-negotiated, not frozen — an
+              incompatible release can behave unexpectedly or fail mid-session. Use bundled omp at
+              any time to revert.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

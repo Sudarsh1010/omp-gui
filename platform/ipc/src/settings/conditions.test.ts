@@ -47,19 +47,31 @@ describe("evaluateCondition", () => {
   });
 
   it("setting kind: true when the depended-on entry's value equals `equals`", () => {
-    const condition: SchemaCondition = { kind: "setting", dependsOn: "advisor.enabled", equals: true };
+    const condition: SchemaCondition = {
+      kind: "setting",
+      dependsOn: "advisor.enabled",
+      equals: true,
+    };
     const values = new Map([["advisor.enabled", entry("advisor.enabled", true)]]);
     expect(evaluateCondition(condition, values, env)).toBe(true);
   });
 
   it("setting kind: false when the depended-on entry's value differs", () => {
-    const condition: SchemaCondition = { kind: "setting", dependsOn: "advisor.enabled", equals: true };
+    const condition: SchemaCondition = {
+      kind: "setting",
+      dependsOn: "advisor.enabled",
+      equals: true,
+    };
     const values = new Map([["advisor.enabled", entry("advisor.enabled", false)]]);
     expect(evaluateCondition(condition, values, env)).toBe(false);
   });
 
   it("setting kind: false when the depended-on key is missing entirely", () => {
-    const condition: SchemaCondition = { kind: "setting", dependsOn: "advisor.enabled", equals: true };
+    const condition: SchemaCondition = {
+      kind: "setting",
+      dependsOn: "advisor.enabled",
+      equals: true,
+    };
     expect(evaluateCondition(condition, new Map(), env)).toBe(false);
   });
 
@@ -77,7 +89,10 @@ describe("evaluateCondition", () => {
     const condition: SchemaCondition = { kind: "platform", platform: "darwin" };
     expect(evaluateCondition(condition, new Map(), env)).toBe(false);
     expect(
-      evaluateCondition(condition, new Map(), { platform: "darwin", terminalCapabilities: new Set() }),
+      evaluateCondition(condition, new Map(), {
+        platform: "darwin",
+        terminalCapabilities: new Set(),
+      }),
     ).toBe(true);
   });
 

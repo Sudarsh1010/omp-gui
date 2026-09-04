@@ -28,7 +28,8 @@ import {
 } from "./models-catalog";
 
 const binary =
-  process.env.OMP_GUI_OMP_PATH ?? join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
+  process.env.OMP_GUI_OMP_PATH ??
+  join(import.meta.dirname, "../../../../crates/shell/binaries/omp");
 
 const FAKE_CREDENTIAL_ENV = {
   ANTHROPIC_API_KEY: "sk-fake-test",
@@ -176,7 +177,10 @@ describe("createModelsCatalogController against the pinned omp binary", () => {
   /** Fresh agent dir + refreshed catalog, wired into a real
    * `SettingsController` and `ModelsCatalogController` pair — the exact
    * composition the Models GUI route builds. */
-  function makeController(): { catalog: ModelsCatalogController; settingsController: SettingsController } {
+  function makeController(): {
+    catalog: ModelsCatalogController;
+    settingsController: SettingsController;
+  } {
     agentDir = mkdtempSync(join(tmpdir(), "omp-gui-models-controller-agent-"));
     cwd = mkdtempSync(join(tmpdir(), "omp-gui-models-controller-cwd-"));
     refreshCatalog(agentDir);
@@ -264,13 +268,14 @@ describe("createModelsCatalogController against the pinned omp binary", () => {
     const afterDisable = await waitForSnapshot(
       catalog,
       (s) =>
-        s.providers.find((p) => p.id === targetProvider.id)?.models.find((m) => m.selector === target.selector)
-          ?.enabled === false,
+        s.providers
+          .find((p) => p.id === targetProvider.id)
+          ?.models.find((m) => m.selector === target.selector)?.enabled === false,
     );
     expect(
-      afterDisable.providers.find((p) => p.id === targetProvider.id)?.models.find(
-        (m) => m.selector === target.selector,
-      )?.enabled,
+      afterDisable.providers
+        .find((p) => p.id === targetProvider.id)
+        ?.models.find((m) => m.selector === target.selector)?.enabled,
     ).toBe(false);
 
     // Re-enabling appends it back onto the now-nonempty allow list rather

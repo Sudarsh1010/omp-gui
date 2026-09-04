@@ -149,8 +149,7 @@ pub struct SchemaEntry {
 /// shape and ordered by key (the source object is already key-ordered by
 /// `BTreeMap`, so no extra sort is needed).
 fn list_entries(app: &AppHandle) -> Result<Vec<ConfigEntry>, CliError> {
-    let raw: BTreeMap<String, RawConfigValue> =
-        run_omp_json(app, &["config", "list", "--json"])?;
+    let raw: BTreeMap<String, RawConfigValue> = run_omp_json(app, &["config", "list", "--json"])?;
     Ok(raw
         .into_iter()
         .map(|(key, v)| ConfigEntry {
@@ -201,7 +200,11 @@ pub(crate) fn set_value(app: &AppHandle, key: &str, value: &str) -> Result<Confi
 
 #[tauri::command]
 #[specta::specta]
-pub async fn config_set(app: AppHandle, key: String, value: String) -> Result<ConfigEntry, CliError> {
+pub async fn config_set(
+    app: AppHandle,
+    key: String,
+    value: String,
+) -> Result<ConfigEntry, CliError> {
     blocking(move || set_value(&app, &key, &value)).await
 }
 
@@ -245,10 +248,9 @@ mod tests {
 
     #[test]
     fn json_value_round_trips_every_shape() {
-        let parsed: JsonValue = serde_json::from_str(
-            r#"{"a":null,"b":true,"c":1.5,"d":"text","e":[1,null,"x"]}"#,
-        )
-        .unwrap();
+        let parsed: JsonValue =
+            serde_json::from_str(r#"{"a":null,"b":true,"c":1.5,"d":"text","e":[1,null,"x"]}"#)
+                .unwrap();
         let JsonValue::Object(obj) = parsed else {
             panic!("expected an object");
         };

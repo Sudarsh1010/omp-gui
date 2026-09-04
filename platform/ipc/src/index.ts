@@ -128,12 +128,18 @@ export type {
   RowState,
 } from "./settings/settings-controller";
 export { serializeConfigValue } from "./settings/serialize";
-export type { ConfigEntry, ConfigSchema, SchemaTab, SchemaEntry, SchemaCondition, JsonValue, CliError, CliStage } from "./bindings/bindings.gen";
+export type {
+  ConfigEntry,
+  ConfigSchema,
+  SchemaTab,
+  SchemaEntry,
+  SchemaCondition,
+  JsonValue,
+  CliError,
+  CliStage,
+} from "./bindings/bindings.gen";
 
-export {
-  createAccountsController,
-  EMPTY_ACCOUNTS_SNAPSHOT,
-} from "./settings/accounts-controller";
+export { createAccountsController, EMPTY_ACCOUNTS_SNAPSHOT } from "./settings/accounts-controller";
 export type {
   AccountRow,
   AccountsController,
@@ -162,7 +168,12 @@ export type { ModelEntry, ModelsCatalog } from "./bindings/bindings.gen";
 export { evaluateCondition, jsonValueEquals } from "./settings/conditions";
 export type { ConditionEnv } from "./settings/conditions";
 export { buildSchemaView } from "./settings/schema-view";
-export type { SchemaView, SchemaTabView, SchemaGroupView, SchemaRowView } from "./settings/schema-view";
+export type {
+  SchemaView,
+  SchemaTabView,
+  SchemaGroupView,
+  SchemaRowView,
+} from "./settings/schema-view";
 
 export { buildSearchIndex, searchSettings } from "./settings/search-index";
 export type { SearchSource, SearchHit, SearchIndex } from "./settings/search-index";

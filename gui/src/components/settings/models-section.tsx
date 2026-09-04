@@ -172,7 +172,9 @@ function modelCaption(
 ): string | undefined {
   const parts: string[] = [];
   if (contextWindow !== undefined) {
-    parts.push(contextWindow >= 1000 ? `${Math.round(contextWindow / 1000)}K ctx` : `${contextWindow} ctx`);
+    parts.push(
+      contextWindow >= 1000 ? `${Math.round(contextWindow / 1000)}K ctx` : `${contextWindow} ctx`,
+    );
   }
   if (cost) {
     parts.push(`$${cost.input.toFixed(2)}/$${cost.output.toFixed(2)} per M`);

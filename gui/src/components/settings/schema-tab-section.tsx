@@ -73,7 +73,12 @@ function optionsFromEntry(entry: SchemaEntry): SelectOption[] | undefined {
   if (!Array.isArray(entry.options)) return undefined;
   const options: SelectOption[] = [];
   for (const item of entry.options) {
-    if (item !== null && typeof item === "object" && !Array.isArray(item) && typeof item.value === "string") {
+    if (
+      item !== null &&
+      typeof item === "object" &&
+      !Array.isArray(item) &&
+      typeof item.value === "string"
+    ) {
       options.push({
         value: item.value,
         label: typeof item.label === "string" ? item.label : item.value,
@@ -87,7 +92,9 @@ function optionsFromEntry(entry: SchemaEntry): SelectOption[] | undefined {
 export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
   const { bridge, settings } = useSettingsContext();
   if (!settings) {
-    throw new Error("SchemaTabSection requires routes/settings.tsx's SettingsController in context");
+    throw new Error(
+      "SchemaTabSection requires routes/settings.tsx's SettingsController in context",
+    );
   }
   const controller = settings;
   const snapshot = useSettings(controller);
@@ -110,10 +117,16 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
       ),
     [],
   );
-  const env = useMemo(() => ({ platform: detectPlatform(), terminalCapabilities: new Set<string>() }), []);
+  const env = useMemo(
+    () => ({ platform: detectPlatform(), terminalCapabilities: new Set<string>() }),
+    [],
+  );
 
   const view = useMemo(
-    () => (schemaState.status === "ready" ? buildSchemaView(schemaState.schema, snapshot.entries, claimed, env) : undefined),
+    () =>
+      schemaState.status === "ready"
+        ? buildSchemaView(schemaState.schema, snapshot.entries, claimed, env)
+        : undefined,
     [schemaState, snapshot.entries, claimed, env],
   );
 
@@ -149,7 +162,12 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
 
   const tab = view.tabs.find((t) => t.id === tabId);
   if (!tab) {
-    return <SectionError title="Unknown tab" message={`omp's schema does not declare a tab named "${tabId}".`} />;
+    return (
+      <SectionError
+        title="Unknown tab"
+        message={`omp's schema does not declare a tab named "${tabId}".`}
+      />
+    );
   }
 
   function setLocalError(key: string, message: string | undefined) {
@@ -161,7 +179,11 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
     });
   }
 
-  function renderEditor(entry: SchemaEntry, value: ConfigEntry, rejected: string | undefined): ReactNode {
+  function renderEditor(
+    entry: SchemaEntry,
+    value: ConfigEntry,
+    rejected: string | undefined,
+  ): ReactNode {
     const onSet = (next: unknown) => {
       setLocalError(entry.key, undefined);
       void controller.set(entry.key, next);
@@ -175,7 +197,8 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
       case "boolean":
         return <SwitchEditor entry={value} onSet={onSet} />;
       case "enum": {
-        const options = optionsFromEntry(entry) ?? (entry.values ?? []).map((v) => ({ value: v, label: v }));
+        const options =
+          optionsFromEntry(entry) ?? (entry.values ?? []).map((v) => ({ value: v, label: v }));
         return <SelectEditor entry={value} options={options} onSet={onSet} />;
       }
       case "number":
@@ -194,7 +217,12 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
       case "array": {
         const options = optionsFromEntry(entry);
         return options ? (
-          <MultiSelectEditor entry={value} options={options} ordered={entry.ordered} onSet={onSet} />
+          <MultiSelectEditor
+            entry={value}
+            options={options}
+            ordered={entry.ordered}
+            onSet={onSet}
+          />
         ) : (
           <JsonEditor key={rejected} entry={value} onSet={onSet} onInvalid={onInvalid} />
         );
@@ -255,7 +283,9 @@ export function SchemaTabSection({ tabId }: SchemaTabSectionProps) {
 
   return (
     <>
-      {tab.ungrouped.length > 0 && <SettingsGroup title="General">{tab.ungrouped.map(renderRow)}</SettingsGroup>}
+      {tab.ungrouped.length > 0 && (
+        <SettingsGroup title="General">{tab.ungrouped.map(renderRow)}</SettingsGroup>
+      )}
       {tab.groups.map((group) => (
         <SettingsGroup
           key={group.name}

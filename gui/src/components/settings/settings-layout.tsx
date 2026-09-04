@@ -43,7 +43,12 @@ export interface SettingsLayoutProps {
  * stable sort on it, not concatenation order, is what keeps the dynamic
  * omp tabs (`group: "omp"`) landing before the static `advanced` entry
  * regardless of which array either section came from. */
-const GROUP_ORDER: Record<SettingsSection["group"], number> = { app: 0, bespoke: 1, omp: 2, advanced: 3 };
+const GROUP_ORDER: Record<SettingsSection["group"], number> = {
+  app: 0,
+  bespoke: 1,
+  omp: 2,
+  advanced: 3,
+};
 
 export function SettingsLayout({ dynamicSections = [], children }: SettingsLayoutProps) {
   const { bridge, settings } = useSettingsContext();
@@ -98,7 +103,13 @@ export function SettingsLayout({ dynamicSections = [], children }: SettingsLayou
           <ArrowLeftIcon />
         </Button>
         <h1 className="font-heading text-sm font-medium">Settings</h1>
-        <SettingsSearch inputRef={searchInputRef} value={query} onChange={setQuery} hits={hits} onNavigate={goToHit} />
+        <SettingsSearch
+          inputRef={searchInputRef}
+          value={query}
+          onChange={setQuery}
+          hits={hits}
+          onNavigate={goToHit}
+        />
       </header>
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-[200px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-2">
@@ -121,7 +132,11 @@ export function SettingsLayout({ dynamicSections = [], children }: SettingsLayou
         </nav>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-4">
-            {searching ? <SearchResults hits={hits} query={query} onNavigate={goToHit} /> : children}
+            {searching ? (
+              <SearchResults hits={hits} query={query} onNavigate={goToHit} />
+            ) : (
+              children
+            )}
           </div>
         </div>
       </div>

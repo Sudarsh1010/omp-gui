@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef } from "react";
-import { createFileRoute, Outlet, useNavigate, useRouteContext, useRouterState } from "@tanstack/react-router";
-import { createSettingsController, type SettingsController, type SettingsStatus } from "@omp-gui/ipc";
+import {
+  createFileRoute,
+  Outlet,
+  useNavigate,
+  useRouteContext,
+  useRouterState,
+} from "@tanstack/react-router";
+import {
+  createSettingsController,
+  type SettingsController,
+  type SettingsStatus,
+} from "@omp-gui/ipc";
 import { SettingsLayout } from "@gui/components/settings/settings-layout";
 import type { SettingsSection } from "@gui/components/settings/sections";
 import { SettingsProvider, useSettingsContext } from "@gui/components/settings/settings-context";

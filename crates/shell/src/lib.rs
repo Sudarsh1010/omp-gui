@@ -1,13 +1,13 @@
+mod auth;
 mod browser;
 mod chromium_install;
 mod config;
+mod models;
 mod omp;
 mod omp_cli;
 mod preferences;
 mod sessions;
 mod smoke;
-mod auth;
-mod models;
 /// The single specta builder shared by the runtime and the bindings export
 /// test, so the checked-in bindings can never drift from the live handler.
 fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {

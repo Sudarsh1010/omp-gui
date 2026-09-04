@@ -83,7 +83,10 @@ export function ChromiumPathRow() {
       }, 1500);
       await loadEffective();
     } catch (error) {
-      setStatus({ kind: "rejected", message: error instanceof Error ? error.message : String(error) });
+      setStatus({
+        kind: "rejected",
+        message: error instanceof Error ? error.message : String(error),
+      });
       setValue(saved);
     }
   };
@@ -113,7 +116,10 @@ export function ChromiumPathRow() {
           }}
         />
         {effective && (
-          <span className="max-w-64 truncate font-mono text-[10px] text-muted-foreground" title={effectiveCaption(effective)}>
+          <span
+            className="max-w-64 truncate font-mono text-[10px] text-muted-foreground"
+            title={effectiveCaption(effective)}
+          >
             {effectiveCaption(effective)}
           </span>
         )}

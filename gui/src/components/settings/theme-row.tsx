@@ -37,7 +37,10 @@ export function ThemeRow() {
         setStatus((current) => (current.kind === "saved" ? { kind: "idle" } : current));
       }, 1500);
     } catch (error) {
-      setStatus({ kind: "rejected", message: error instanceof Error ? error.message : String(error) });
+      setStatus({
+        kind: "rejected",
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   };
 

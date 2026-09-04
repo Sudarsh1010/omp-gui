@@ -77,7 +77,10 @@ export function WorkingDirectoryRow() {
       }, 1500);
       await loadEffective();
     } catch (error) {
-      setStatus({ kind: "rejected", message: error instanceof Error ? error.message : String(error) });
+      setStatus({
+        kind: "rejected",
+        message: error instanceof Error ? error.message : String(error),
+      });
       setValue(saved);
     }
   };

@@ -24,7 +24,9 @@ import type { BespokeEditorProps } from "./bespoke-editor";
 export function ProviderLimitsEditor({ entry, value }: BespokeEditorProps) {
   const { bridge, settings } = useSettingsContext();
   if (!settings) {
-    throw new Error("ProviderLimitsEditor requires routes/settings.tsx's SettingsController in context");
+    throw new Error(
+      "ProviderLimitsEditor requires routes/settings.tsx's SettingsController in context",
+    );
   }
   const controller = settings;
   const rows = useSyncExternalStore(controller.subscribe, () => controller.snapshot().rows);
@@ -68,7 +70,10 @@ export function ProviderLimitsEditor({ entry, value }: BespokeEditorProps) {
       delete next[provider];
       return next;
     });
-    void controller.set(entry.key, setProviderLimit(record, provider, result.kind === "valid" ? result.value : undefined));
+    void controller.set(
+      entry.key,
+      setProviderLimit(record, provider, result.kind === "valid" ? result.value : undefined),
+    );
   }
 
   const rowState = rows.get(entry.key);
@@ -80,7 +85,9 @@ export function ProviderLimitsEditor({ entry, value }: BespokeEditorProps) {
           <span className="text-xs font-medium text-foreground" title={entry.key}>
             Provider Limits
           </span>
-          {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
+          {entry.description && (
+            <p className="text-xs text-muted-foreground">{entry.description}</p>
+          )}
         </div>
         {rowState?.rejected && (
           <span className="shrink-0 bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">

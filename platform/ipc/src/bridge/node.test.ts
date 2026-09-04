@@ -136,10 +136,18 @@ describe("nodeBridge's start() spawn-cwd resolution (#22)", () => {
     await bridge.start();
 
     expect(execFileSyncMock).toHaveBeenCalledTimes(1);
-    const [, , execOptions] = execFileSyncMock.mock.calls[0] as unknown as [string, string[], { env?: Record<string, string> }];
+    const [, , execOptions] = execFileSyncMock.mock.calls[0] as unknown as [
+      string,
+      string[],
+      { env?: Record<string, string> },
+    ];
     expect(execOptions.env?.PI_CODING_AGENT_DIR).toBe(agentDir);
 
-    const [, , spawnOptions] = spawnMock.mock.calls[0] as unknown as [string, string[], { env?: Record<string, string> }];
+    const [, , spawnOptions] = spawnMock.mock.calls[0] as unknown as [
+      string,
+      string[],
+      { env?: Record<string, string> },
+    ];
     expect(spawnOptions.env?.PI_CODING_AGENT_DIR).toBe(agentDir);
   });
 });

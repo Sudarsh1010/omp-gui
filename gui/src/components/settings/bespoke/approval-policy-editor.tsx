@@ -47,7 +47,9 @@ const DENY_ON_CLASS =
 export function ApprovalPolicyEditor({ entry, value }: BespokeEditorProps) {
   const { bridge, settings } = useSettingsContext();
   if (!settings) {
-    throw new Error("ApprovalPolicyEditor requires routes/settings.tsx's SettingsController in context");
+    throw new Error(
+      "ApprovalPolicyEditor requires routes/settings.tsx's SettingsController in context",
+    );
   }
   const controller = settings;
   const schemaState = useConfigSchema(bridge);
@@ -62,7 +64,11 @@ export function ApprovalPolicyEditor({ entry, value }: BespokeEditorProps) {
     const names = new Set<string>();
     if (schemaState.status === "ready") {
       for (const setting of schemaState.schema.settings) {
-        if (setting.tab === "tools" && setting.group === "Available Tools" && setting.key.endsWith(".enabled")) {
+        if (
+          setting.tab === "tools" &&
+          setting.group === "Available Tools" &&
+          setting.key.endsWith(".enabled")
+        ) {
           names.add(setting.key.slice(0, -".enabled".length));
         }
       }
@@ -85,7 +91,9 @@ export function ApprovalPolicyEditor({ entry, value }: BespokeEditorProps) {
           <span className="text-xs font-medium text-foreground" title={entry.key}>
             Approval
           </span>
-          {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
+          {entry.description && (
+            <p className="text-xs text-muted-foreground">{entry.description}</p>
+          )}
         </div>
         {rowState?.rejected && (
           <span className="shrink-0 bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">

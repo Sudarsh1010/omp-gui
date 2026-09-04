@@ -24,7 +24,13 @@ export interface SettingsSearchProps {
   onNavigate: (hit: SearchHit) => void;
 }
 
-export function SettingsSearch({ inputRef, value, onChange, hits, onNavigate }: SettingsSearchProps) {
+export function SettingsSearch({
+  inputRef,
+  value,
+  onChange,
+  hits,
+  onNavigate,
+}: SettingsSearchProps) {
   return (
     <InputGroup className="ml-auto h-7 w-64">
       <InputGroupAddon>

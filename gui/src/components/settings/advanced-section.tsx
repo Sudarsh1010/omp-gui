@@ -67,7 +67,10 @@ export function AdvancedSection() {
   const [localErrors, setLocalErrors] = useState<ReadonlyMap<string, string>>(new Map());
 
   const schemaByKey = useMemo(
-    () => (schemaState.status === "ready" ? new Map(schemaState.schema.settings.map((s) => [s.key, s])) : undefined),
+    () =>
+      schemaState.status === "ready"
+        ? new Map(schemaState.schema.settings.map((s) => [s.key, s]))
+        : undefined,
     [schemaState],
   );
 
@@ -144,7 +147,11 @@ export function AdvancedSection() {
       case "enum": {
         const values = schemaEntry?.values;
         return values && values.length > 0 ? (
-          <SelectEditor entry={entry} options={values.map((value) => ({ value, label: value }))} onSet={onSet} />
+          <SelectEditor
+            entry={entry}
+            options={values.map((value) => ({ value, label: value }))}
+            onSet={onSet}
+          />
         ) : (
           <TextEditor key={rejected} entry={entry} onSet={onSet} />
         );

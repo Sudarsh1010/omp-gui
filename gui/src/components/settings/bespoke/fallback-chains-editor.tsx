@@ -39,7 +39,9 @@ const ROLE_KEYS = ["smol", "default", "slow"];
 export function FallbackChainsEditor({ entry, value }: BespokeEditorProps) {
   const { bridge, settings } = useSettingsContext();
   if (!settings) {
-    throw new Error("FallbackChainsEditor requires routes/settings.tsx's SettingsController in context");
+    throw new Error(
+      "FallbackChainsEditor requires routes/settings.tsx's SettingsController in context",
+    );
   }
   const controller = settings;
   const rows = useSyncExternalStore(controller.subscribe, () => controller.snapshot().rows);
@@ -77,7 +79,9 @@ export function FallbackChainsEditor({ entry, value }: BespokeEditorProps) {
           <span className="text-xs font-medium text-foreground" title={entry.key}>
             Fallback Chains
           </span>
-          {entry.description && <p className="text-xs text-muted-foreground">{entry.description}</p>}
+          {entry.description && (
+            <p className="text-xs text-muted-foreground">{entry.description}</p>
+          )}
         </div>
         {rowState?.rejected && (
           <span className="shrink-0 bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
@@ -147,7 +151,9 @@ export function FallbackChainsEditor({ entry, value }: BespokeEditorProps) {
               {models.status === "ready" ? (
                 <Select<string>
                   value={null}
-                  onValueChange={(selector) => selector && writeRecord(addChainEntry(record, key, selector))}
+                  onValueChange={(selector) =>
+                    selector && writeRecord(addChainEntry(record, key, selector))
+                  }
                   disabled={models.models.length === 0}
                 >
                   <SelectTrigger size="sm" className="w-56">

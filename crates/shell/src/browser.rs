@@ -563,11 +563,10 @@ pub(crate) fn resolve_chromium_source(
 /// give the user an actionable next step.
 fn resolve_chromium_executable(app: &AppHandle) -> Result<PathBuf, BrowserError> {
     let preference = crate::preferences::load_preferences(app).chromium_path;
-    let (found, _source) = resolve_chromium_source(
-        chromium_env_override(),
-        preference.as_deref(),
-        || find_cached_chromium(app),
-    );
+    let (found, _source) =
+        resolve_chromium_source(chromium_env_override(), preference.as_deref(), || {
+            find_cached_chromium(app)
+        });
 
     found.ok_or_else(|| BrowserError::ChromiumNotFound {
         message: format!(
@@ -1379,11 +1378,10 @@ mod tests {
     fn preference_wins_over_cache_when_env_is_unset() {
         let pref_path = TempFile::new("pref2");
 
-        let (found, source) = resolve_chromium_source(
-            None,
-            Some(pref_path.0.to_str().unwrap()),
-            || panic!("cache_lookup must not run when the preference resolves"),
-        );
+        let (found, source) =
+            resolve_chromium_source(None, Some(pref_path.0.to_str().unwrap()), || {
+                panic!("cache_lookup must not run when the preference resolves")
+            });
         assert_eq!(found, Some(pref_path.0.clone()));
         assert_eq!(source, ChromiumSource::Preference);
     }

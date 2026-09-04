@@ -30,7 +30,10 @@ import {
 } from "@omp-gui/ui/components/empty";
 import { Spinner } from "@omp-gui/ui/components/spinner";
 import { PlusIcon, SignInIcon } from "@phosphor-icons/react";
-import { LoginElicitationCard, useAutoOpenElicitation } from "@gui/components/session/login-elicitation";
+import {
+  LoginElicitationCard,
+  useAutoOpenElicitation,
+} from "@gui/components/session/login-elicitation";
 import { useLogin } from "@gui/session/use-login";
 import { useSessions } from "@gui/session/use-sessions";
 import { useAccounts } from "@gui/settings/use-accounts";
@@ -77,7 +80,11 @@ export function AccountsSection({ store }: AccountsSectionProps) {
 
   if (accounts.status === "error" && accounts.error) {
     return (
-      <SectionError title="Accounts unavailable" stage={accounts.error.stage} message={accounts.error.message} />
+      <SectionError
+        title="Accounts unavailable"
+        stage={accounts.error.stage}
+        message={accounts.error.message}
+      />
     );
   }
 
@@ -91,8 +98,8 @@ export function AccountsSection({ store }: AccountsSectionProps) {
             </EmptyMedia>
             <EmptyTitle>Login needs a running session</EmptyTitle>
             <EmptyDescription>
-              Logging in to a provider goes through a session's own connection to omp. Start one
-              to sign in — logging out doesn't need a session.
+              Logging in to a provider goes through a session's own connection to omp. Start one to
+              sign in — logging out doesn't need a session.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -105,7 +112,10 @@ export function AccountsSection({ store }: AccountsSectionProps) {
       )}
 
       {login.elicitation && (
-        <LoginElicitationCard elicitation={login.elicitation} onDismiss={login.dismissElicitation} />
+        <LoginElicitationCard
+          elicitation={login.elicitation}
+          onDismiss={login.dismissElicitation}
+        />
       )}
 
       <SettingsGroup title="Accounts">
