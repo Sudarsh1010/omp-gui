@@ -4,7 +4,7 @@
 //! persistent `--user-data-dir` and an ephemeral `--remote-debugging-port`.
 //! omp's builtin browser tool attaches to that same port via its existing
 //! `connected`-kind CDP path (notes/browser.md §2, §9). On launch this
-//! module hands omp that URL itself via `config::set_value`/`reset_value`
+//! module hands omp that URL itself via `config::write_value`/`unset_value`
 //! (`set_connected_cdp_config`, defined just after `browser_stop` below),
 //! and resets it once the project's last interested party stops the
 //! browser — the same config-bridge lever `browser_set_relay` (near the
@@ -217,12 +217,26 @@ impl Default for BrowserState {
 }
 
 /// Launch (or, if this project already has one running, attach to) the
-/// per-project Browser Pane Chromium.
+/// per-project Browser Pane Chromium. Runs on a blocking pool thread
+/// (`crate::omp_cli::blocking`), not Tauri's main thread — the Chromium
+/// spawn, DevTools-banner wait, and best-effort omp config write here are
+/// all synchronous I/O.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_launch(
+pub async fn browser_launch(
     app: AppHandle,
-    state: State<'_, BrowserState>,
+    project_path: String,
+) -> Result<BrowserInfo, BrowserError> {
+    crate::omp_cli::blocking(move || {
+        let state = app.state::<BrowserState>();
+        browser_launch_blocking(&app, &state, project_path)
+    })
+    .await
+}
+
+fn browser_launch_blocking(
+    app: &AppHandle,
+    state: &BrowserState,
     project_path: String,
 ) -> Result<BrowserInfo, BrowserError> {
     let canonical =
@@ -239,8 +253,8 @@ pub fn browser_launch(
         }
     }
 
-    let chromium_path = resolve_chromium_executable(&app)?;
-    let user_data_dir = profile_dir_for_project(&app, &canonical)?;
+    let chromium_path = resolve_chromium_executable(app)?;
+    let user_data_dir = profile_dir_for_project(app, &canonical)?;
     std::fs::create_dir_all(&user_data_dir).map_err(|e| BrowserError::ProfileDirFailed {
         message: format!(
             "failed to create profile directory {}: {e}",
@@ -363,7 +377,7 @@ pub fn browser_launch(
     // config write must not fail the launch itself — the pane's
     // screencast and human Takeover driving both work with no dependency
     // on omp ever attaching.
-    if let Err(_err) = set_connected_cdp_config(&app, Some(&info.cdp_url)) {
+    if let Err(_err) = set_connected_cdp_config(app, Some(&info.cdp_url)) {
         #[cfg(debug_assertions)]
         eprintln!("[browser cdp-config] failed to set browser.cdpUrl: {_err}");
     }
@@ -373,12 +387,22 @@ pub fn browser_launch(
 /// Release this caller's interest in a project's Browser Pane. The Chromium
 /// keeps running (and its persistent profile keeps existing) until every
 /// caller has released it — mirroring omp's own connected-URL refcount
-/// (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
+/// (notes/browser.md §2) — then `BrowserSession::drop` tears it down. Runs
+/// on a blocking pool thread (`crate::omp_cli::blocking`), matching
+/// `browser_launch`.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_stop(
-    app: AppHandle,
-    state: State<'_, BrowserState>,
+pub async fn browser_stop(app: AppHandle, project_path: String) -> Result<(), BrowserError> {
+    crate::omp_cli::blocking(move || {
+        let state = app.state::<BrowserState>();
+        browser_stop_blocking(&app, &state, project_path)
+    })
+    .await
+}
+
+fn browser_stop_blocking(
+    app: &AppHandle,
+    state: &BrowserState,
     project_path: String,
 ) -> Result<(), BrowserError> {
     let key = std::fs::canonicalize(&project_path)
@@ -403,7 +427,7 @@ pub fn browser_stop(
         // `browser.cdpUrl` now that this project's last interested party
         // has released the Chromium (see `set_connected_cdp_config`'s doc
         // comment for why a failure here must not block the teardown).
-        if let Err(_err) = set_connected_cdp_config(&app, None) {
+        if let Err(_err) = set_connected_cdp_config(app, None) {
             #[cfg(debug_assertions)]
             eprintln!("[browser cdp-config] failed to reset browser.cdpUrl: {_err}");
         }
@@ -415,25 +439,26 @@ pub fn browser_stop(
 /// `connected`-kind CDP path (notes/browser.md §2, §9) can attach —
 /// `browser.cdpUrl` (`config/settings-schema.ts:4509-4519`; omp's settings
 /// resolution checks `browser.relay` *before* this key, so an enabled relay
-/// still wins). Mirrors `browser_set_relay`'s `config::set_value`/
-/// `reset_value` shape and its doc comment in full: this is a short-lived
+/// still wins). Mirrors `browser_set_relay`'s `config::write_value`/
+/// `unset_value` shape and its doc comment in full: this is a short-lived
 /// CLI invocation of the
 /// pinned binary, not an RPC call into a running `--mode rpc-ui` session,
 /// so a session already running when a Browser Pane launches or stops
 /// keeps whichever CDP config (or none) it resolved at its own startup —
 /// only omp sessions started *after* this call see it. That gap is
 /// accepted, not closed, by both `browser_launch` and `browser_stop`,
-/// which therefore treat every call here as best-effort.
+/// which therefore treat every call here as best-effort. Uses the
+/// no-relist `write_value`/`unset_value` lever — this write's own
+/// `ConfigEntry` is never read, so the follow-up `config list`
+/// `set_value`/`reset_value` otherwise do is a second, wasted shell-out.
 fn set_connected_cdp_config(app: &AppHandle, cdp_url: Option<&str>) -> Result<(), BrowserError> {
     let result = match cdp_url {
-        Some(url) => crate::config::set_value(app, "browser.cdpUrl", url),
-        None => crate::config::reset_value(app, "browser.cdpUrl"),
+        Some(url) => crate::config::write_value(app, "browser.cdpUrl", url),
+        None => crate::config::unset_value(app, "browser.cdpUrl"),
     };
-    result
-        .map(|_| ())
-        .map_err(|e| BrowserError::CdpConfigFailed {
-            message: e.to_string(),
-        })
+    result.map_err(|e| BrowserError::CdpConfigFailed {
+        message: e.to_string(),
+    })
 }
 
 /// Toggle Takeover for a project's Browser Pane. Two things change:
@@ -1118,16 +1143,30 @@ impl Drop for RelayDaemon {
 /// same, already-accepted gap `set_connected_cdp_config` documents for T9's
 /// `connected` CDP URL. `sessionId` is accepted now so every call site is
 /// ready the moment a per-running-session config lever exists.
+/// Runs on a blocking pool thread (`crate::omp_cli::blocking`), matching
+/// `browser_launch`/`browser_stop`.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_set_relay(
+pub async fn browser_set_relay(
     app: AppHandle,
-    state: State<'_, BrowserState>,
+    session_id: String,
+    enabled: bool,
+) -> Result<RelayInfo, BrowserError> {
+    crate::omp_cli::blocking(move || {
+        let state = app.state::<BrowserState>();
+        browser_set_relay_blocking(&app, &state, session_id, enabled)
+    })
+    .await
+}
+
+fn browser_set_relay_blocking(
+    app: &AppHandle,
+    state: &BrowserState,
     session_id: String,
     enabled: bool,
 ) -> Result<RelayInfo, BrowserError> {
     if !enabled {
-        return disable_relay(&app, &state, &session_id);
+        return disable_relay(app, state, &session_id);
     }
 
     {
@@ -1145,11 +1184,11 @@ pub fn browser_set_relay(
     // daemon up and flip the persisted config outside the lock — mirrors
     // `browser_launch` spawning Chromium before taking `state.sessions`.
     let (omp_path, _source) =
-        crate::omp::resolve_omp_path(&app).map_err(|e| BrowserError::RelayLaunchFailed {
+        crate::omp::resolve_omp_path(app).map_err(|e| BrowserError::RelayLaunchFailed {
             message: e.to_string(),
         })?;
     let child = ensure_relay_daemon(&omp_path, DEFAULT_RELAY_PORT)?;
-    crate::config::set_value(&app, "browser.relay", "true").map_err(|e| {
+    crate::config::write_value(app, "browser.relay", "true").map_err(|e| {
         BrowserError::RelayConfigFailed {
             message: e.to_string(),
         }
@@ -1204,7 +1243,7 @@ fn disable_relay(
         // adopted external/omp-lazy-started daemon is left running for
         // whoever else might still be using it.
         state.relay.lock().remove(&DEFAULT_RELAY_PORT);
-        crate::config::reset_value(app, "browser.relay").map_err(|e| {
+        crate::config::unset_value(app, "browser.relay").map_err(|e| {
             BrowserError::RelayConfigFailed {
                 message: e.to_string(),
             }

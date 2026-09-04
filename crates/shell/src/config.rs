@@ -8,8 +8,8 @@
 //! every call here is global-only by construction (ADR-0011 §"Scope").
 //!
 //! `browser.rs`'s Relay toggle is migrated onto this same helper
-//! (`browser_set_relay`/`disable_relay` now call `config_get_bool_arg`/
-//! `run_omp_cli` here instead of shelling out from the home directory) so
+//! (`browser_set_relay`/`disable_relay` now call `write_value`/
+//! `unset_value` here instead of shelling out from the home directory) so
 //! there is exactly one `omp config` invocation path in this crate.
 
 use crate::omp_cli::{CliError, blocking, run_omp_cli, run_omp_json};
@@ -191,11 +191,25 @@ pub async fn config_list(app: AppHandle) -> Result<Vec<ConfigEntry>, CliError> {
 /// return the entry as it now reads. Rejects with omp's own validation
 /// message (`CliError::Rejected`) for an unknown key or a mistyped value.
 ///
-/// Crate-visible so `browser.rs`'s Relay toggle (`browser.relay`) writes
-/// through this same lever instead of its own `omp config` shell-out.
+/// Crate-visible so `browser.rs`'s Relay toggle (`browser.relay`) and its
+/// connected-CDP-URL write can go through this same lever instead of
+/// their own `omp config` shell-outs. Callers that don't need the
+/// resulting `ConfigEntry` (a fire-and-forget best-effort write) should
+/// use `write_value` instead — it skips the follow-up `config list`
+/// read-back this function does via `entry_after`.
 pub(crate) fn set_value(app: &AppHandle, key: &str, value: &str) -> Result<ConfigEntry, CliError> {
     run_omp_cli(app, &["config", "set", key, value, "--json"])?;
     entry_after(app, key)
+}
+
+/// Set `key` to `value` with exactly one `omp config` invocation — no
+/// follow-up `config list` read-back. For callers that only need the
+/// write to take effect, not the `ConfigEntry` it produced (`browser.rs`'s
+/// relay/CDP-config writes, which are best-effort and discard the
+/// result): a synchronous caller on the main thread should never pay for
+/// two shell-outs when one suffices.
+pub(crate) fn write_value(app: &AppHandle, key: &str, value: &str) -> Result<(), CliError> {
+    run_omp_cli(app, &["config", "set", key, value, "--json"]).map(|_| ())
 }
 
 #[tauri::command]
@@ -210,10 +224,19 @@ pub async fn config_set(
 
 /// Restore `key` to omp's current schema default and return the entry.
 /// Crate-visible for the same reason as `set_value` — disabling Relay
-/// resets `browser.relay` through this lever.
+/// resets `browser.relay` through this lever. Callers that discard the
+/// resulting entry should use `unset_value` instead.
 pub(crate) fn reset_value(app: &AppHandle, key: &str) -> Result<ConfigEntry, CliError> {
     run_omp_cli(app, &["config", "reset", key, "--json"])?;
     entry_after(app, key)
+}
+
+/// Restore `key` to omp's current schema default with exactly one `omp
+/// config` invocation — no follow-up `config list` read-back. The
+/// `write_value` counterpart for callers that only care that the reset
+/// happened (`browser.rs`'s relay/CDP-config clears).
+pub(crate) fn unset_value(app: &AppHandle, key: &str) -> Result<(), CliError> {
+    run_omp_cli(app, &["config", "reset", key, "--json"]).map(|_| ())
 }
 
 #[tauri::command]
