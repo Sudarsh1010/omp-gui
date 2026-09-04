@@ -13,6 +13,9 @@ import type {
   ChromiumInstallEvent,
   AppPreferences,
   PreferencesError,
+  ConfigEntry,
+  ConfigSchema,
+  CliError,
 } from "../bindings/bindings.gen";
 
 export type {
@@ -29,6 +32,9 @@ export type {
   ChromiumInstallEvent,
   AppPreferences,
   PreferencesError,
+  ConfigEntry,
+  ConfigSchema,
+  CliError,
 };
 
 export interface ShellBridge {
@@ -122,6 +128,33 @@ export interface ShellBridge {
    * same reason as `preferencesRead`.
    */
   preferencesWrite?(prefs: AppPreferences): Promise<AppPreferences>;
+  /**
+   * List every setting omp's global config recognizes, current value
+   * included (ADR-0011). Every invocation runs from a guaranteed-empty
+   * scratch directory, so a project's `.claude/settings.json` never
+   * leaks in. Optional: only omp-backed bridges (Tauri; `nodeBridge`
+   * unconditionally, since it needs no extra construction option)
+   * implement the config surface — rejects with `BridgeCommandError<CliError>`.
+   */
+  configList?(): Promise<ConfigEntry[]>;
+  /**
+   * Set `key` to the raw CLI string `value` omp expects for that key's
+   * type (`platform/ipc/src/settings/serialize.ts` produces it) and
+   * return the entry as it now reads. Rejects with omp's own validation
+   * message for an unknown key or a mistyped value.
+   */
+  configSet?(key: string, value: string): Promise<ConfigEntry>;
+  /** Restore `key` to omp's current schema default and return the entry. */
+  configReset?(key: string): Promise<ConfigEntry>;
+  /** Remove `key` from the global config file entirely. */
+  configUnset?(key: string): Promise<void>;
+  /**
+   * The running binary's own description of its settings surface — tabs,
+   * groups, labels, descriptions, options, and declarative conditions.
+   * An override binary predating `config schema` rejects; callers
+   * degrade to an Advanced-only view built from `configList()` alone.
+   */
+  configSchema?(): Promise<ConfigSchema>;
 }
 
 /**
