@@ -163,3 +163,21 @@ export { evaluateCondition, jsonValueEquals } from "./settings/conditions";
 export type { ConditionEnv } from "./settings/conditions";
 export { buildSchemaView } from "./settings/schema-view";
 export type { SchemaView, SchemaTabView, SchemaGroupView, SchemaRowView } from "./settings/schema-view";
+
+export {
+  addChainEntry,
+  addChainKey,
+  moveChainEntry,
+  removeChainKey,
+  setProviderLimit,
+  setToolPolicy,
+  validateLimit,
+} from "./settings/records";
+export type {
+  ChainEntryMove,
+  FallbackChainsRecord,
+  LimitValidation,
+  ProviderLimitsRecord,
+  ToolApprovalRecord,
+  ToolPolicy,
+} from "./settings/records";
