@@ -60,6 +60,7 @@ export type {
   ForeignLockProbe,
   SessionPreview,
   SessionPreviewMessage,
+  OmpBinaryInfo,
 } from "./bindings/bindings.gen";
 
 export { createSessionDirectory } from "./session/session-directory";
@@ -94,3 +95,97 @@ export type {
   LoginSnapshot,
   OAuthUrlElicitation,
 } from "./session/login";
+
+export {
+  createAppPreferencesController,
+  DEFAULT_APP_PREFERENCES,
+} from "./preferences/app-preferences";
+export type {
+  AppPreferencesController,
+  AppPreferencesSnapshot,
+  AppPreferencesStatus,
+} from "./preferences/app-preferences";
+export type { AppPreferences, PreferencesError, Theme } from "./bindings/bindings.gen";
+export type {
+  EffectivePreferences,
+  EffectiveWorkingDirectory,
+  WorkingDirectorySource,
+  EffectiveChromiumPath,
+  ChromiumPathSource,
+  PathProbe,
+} from "./bindings/bindings.gen";
+
+export { createSettingsController, EMPTY_SETTINGS_SNAPSHOT } from "./settings/settings-controller";
+export type {
+  SettingsController,
+  SettingsSnapshot,
+  SettingsStatus,
+  RowState,
+} from "./settings/settings-controller";
+export { serializeConfigValue } from "./settings/serialize";
+export type {
+  ConfigEntry,
+  ConfigSchema,
+  SchemaTab,
+  SchemaEntry,
+  SchemaCondition,
+  JsonValue,
+  CliError,
+  CliStage,
+} from "./bindings/bindings.gen";
+
+export { createAccountsController, EMPTY_ACCOUNTS_SNAPSHOT } from "./settings/accounts-controller";
+export type {
+  AccountRow,
+  AccountsController,
+  AccountsSnapshot,
+  AccountsStatus,
+} from "./settings/accounts-controller";
+export type { AuthProvider, AuthAccount } from "./bindings/bindings.gen";
+
+export {
+  createModelsCatalogController,
+  EMPTY_MODELS_CATALOG_SNAPSHOT,
+  ENABLED_MODELS_EMPTY_MEANS_ALL,
+} from "./settings/models-catalog";
+export type {
+  CatalogModelCost,
+  CatalogModelRow,
+  CatalogProviderRow,
+  ModelRole,
+  ModelRoleAssignment,
+  ModelsCatalogController,
+  ModelsCatalogSnapshot,
+  ModelsCatalogStatus,
+} from "./settings/models-catalog";
+export type { ModelEntry, ModelsCatalog } from "./bindings/bindings.gen";
+
+export { evaluateCondition, jsonValueEquals } from "./settings/conditions";
+export type { ConditionEnv } from "./settings/conditions";
+export { buildSchemaView } from "./settings/schema-view";
+export type {
+  SchemaView,
+  SchemaTabView,
+  SchemaGroupView,
+  SchemaRowView,
+} from "./settings/schema-view";
+
+export { buildSearchIndex, searchSettings } from "./settings/search-index";
+export type { SearchSource, SearchHit, SearchIndex } from "./settings/search-index";
+export {
+  addChainEntry,
+  addChainKey,
+  moveChainEntry,
+  removeChainKey,
+  setProviderLimit,
+  setToolPolicy,
+  validateLimit,
+} from "./settings/records";
+export type {
+  ChainEntryMove,
+  FallbackChainsRecord,
+  LimitValidation,
+  ProviderLimitsRecord,
+  ToolApprovalRecord,
+  ToolPolicy,
+} from "./settings/records";

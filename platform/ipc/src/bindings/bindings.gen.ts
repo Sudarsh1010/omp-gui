@@ -13,8 +13,10 @@ export const commands = {
 	 *  cwd of a session they are about to resume so omp's `switch_session` guard
 	 *  (which refuses a resume whose recorded cwd differs from the live process
 	 *  cwd, since the rpc-ui protocol has no cwd-change opt-in) accepts it.
-	 *  Falls back to the user's home directory when omitted, empty, or naming a
-	 *  path that is not an existing directory.
+	 *  When omitted, empty, or naming a path that is not an existing directory
+	 *  (a fresh session), falls back to the App Preferences
+	 *  `defaultWorkingDirectory` (#22) when that names an existing directory,
+	 *  else the user's home directory — see `resolve_start_cwd`.
 	 */
 	ompStart: (cwd: string | null) => typedError<OmpStartInfo, BridgeError>(__TAURI_INVOKE("omp_start", { cwd })),
 	/**  Write one NDJSON command line to the subprocess's stdin. */
@@ -23,14 +25,19 @@ export const commands = {
 	ompKill: (sessionId: string) => typedError<null, BridgeError>(__TAURI_INVOKE("omp_kill", { sessionId })),
 	/**
 	 *  Launch (or, if this project already has one running, attach to) the
-	 *  per-project Browser Pane Chromium.
+	 *  per-project Browser Pane Chromium. Runs on a blocking pool thread
+	 *  (`crate::omp_cli::blocking`), not Tauri's main thread — the Chromium
+	 *  spawn, DevTools-banner wait, and best-effort omp config write here are
+	 *  all synchronous I/O.
 	 */
 	browserLaunch: (projectPath: string) => typedError<BrowserInfo, BrowserError>(__TAURI_INVOKE("browser_launch", { projectPath })),
 	/**
 	 *  Release this caller's interest in a project's Browser Pane. The Chromium
 	 *  keeps running (and its persistent profile keeps existing) until every
 	 *  caller has released it — mirroring omp's own connected-URL refcount
-	 *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
+	 *  (notes/browser.md §2) — then `BrowserSession::drop` tears it down. Runs
+	 *  on a blocking pool thread (`crate::omp_cli::blocking`), matching
+	 *  `browser_launch`.
 	 */
 	browserStop: (projectPath: string) => typedError<null, BrowserError>(__TAURI_INVOKE("browser_stop", { projectPath })),
 	/**
@@ -45,11 +52,13 @@ export const commands = {
 	 *  if this app spawned the daemon, it is torn down (`RelayDaemon::drop`).
 	 * 
 	 *  omp has no RPC command for mutating a *running* session's settings (see
-	 *  `set_relay_config`'s doc comment), so a session already streaming when
+	 *  `browser_set_relay`'s doc comment), so a session already streaming when
 	 *  this is called keeps whatever kind it resolved at its own startup — the
 	 *  same, already-accepted gap `set_connected_cdp_config` documents for T9's
 	 *  `connected` CDP URL. `sessionId` is accepted now so every call site is
 	 *  ready the moment a per-running-session config lever exists.
+	 *  Runs on a blocking pool thread (`crate::omp_cli::blocking`), matching
+	 *  `browser_launch`/`browser_stop`.
 	 */
 	browserSetRelay: (sessionId: string, enabled: boolean) => typedError<RelayInfo, BrowserError>(__TAURI_INVOKE("browser_set_relay", { sessionId, enabled })),
 	/**
@@ -112,6 +121,128 @@ export const commands = {
 	 *  [`SessionPreview`].
 	 */
 	readSessionPreview: (path: string) => typedError<SessionPreview, SessionsError>(__TAURI_INVOKE("read_session_preview", { path })),
+	/**
+	 *  Read the app's own preferences file (theme, omp/Chromium overrides,
+	 *  default working directory) — always available, even when omp itself is
+	 *  unreachable (ADR-0011).
+	 */
+	preferencesRead: () => typedError<AppPreferences, PreferencesError>(__TAURI_INVOKE("preferences_read")),
+	/**
+	 *  Write the app's preferences file, preserving any keys this command
+	 *  doesn't know about, and return what is now on disk.
+	 */
+	preferencesWrite: (prefs: AppPreferences) => typedError<AppPreferences, PreferencesError>(__TAURI_INVOKE("preferences_write", { prefs })),
+	/**
+	 *  The effective default working directory and Chromium executable a
+	 *  fresh session / Browser Pane launch would actually use right now, plus
+	 *  where each came from (#22, issue #19 story: "Both rows show the
+	 *  effective value and where it came from"). Reuses `omp::resolve_start_cwd`
+	 *  and `browser::resolve_chromium_source` — the exact functions
+	 *  `omp_start`/`browser_launch` themselves call — so this can never drift
+	 *  from what a real spawn would do.
+	 */
+	preferencesEffective: () => typedError<EffectivePreferences, PreferencesError>(__TAURI_INVOKE("preferences_effective")),
+	/**
+	 *  Probe an arbitrary filesystem path for the working-directory row (needs
+	 *  `isDir`) and the Chromium-path row (needs `isExecutable`) to validate
+	 *  on blur/Enter before writing it to the preferences file.
+	 */
+	pathProbe: (path: string) => __TAURI_INVOKE<PathProbe>("path_probe", { path }),
+	/**
+	 *  Reports which omp binary the app currently resolves to run (ADR-0004's
+	 *  Bundled / Override badge). Never fails: App Preferences must stay
+	 *  usable even when the committed override is broken (ADR-0011's
+	 *  "bootstrap independence" — issue #23's "page still opens and this row
+	 *  remains editable when the committed override is broken"). A resolution
+	 *  failure is reported as the configured-but-currently-unusable path with
+	 *  `version: None`, rather than propagating an error that would take this
+	 *  always-available section down with it.
+	 */
+	ompBinaryInfo: () => __TAURI_INVOKE<OmpBinaryInfo>("omp_binary_info"),
+	/**
+	 *  Runs the shared launch-time smoke test (`smoke::smoke_test`) against an
+	 *  arbitrary candidate path, without touching App Preferences — the
+	 *  candidate under test is never used for anything else (ADR-0004).
+	 */
+	ompSmokeTest: (path: string) => typedError<SmokeReport, SmokeFailure>(__TAURI_INVOKE("omp_smoke_test", { path })),
+	/**
+	 *  Smoke-tests `path` and, only on success, commits it as the App
+	 *  Preferences omp override, returning the freshly resolved
+	 *  `OmpBinaryInfo`. A failed smoke test writes nothing, so the previously
+	 *  committed override (if any) is retained — issue #23's acceptance
+	 *  criterion. The compatibility-risk acknowledgement dialog is a GUI-only
+	 *  concern (`omp-binary-row.tsx`); this command only ever runs after the
+	 *  user has already confirmed it.
+	 */
+	ompOverrideCommit: (path: string) => typedError<OmpBinaryInfo, OmpOverrideError>(__TAURI_INVOKE("omp_override_commit", { path })),
+	/**
+	 *  Reverts the App Preferences omp override to the bundled pin — no smoke
+	 *  test needed (ADR-0004: "'Use bundled omp' restores the pin without a
+	 *  dialog"). Best-effort: a write failure leaves `omp_path` exactly as it
+	 *  was, which the fresh `omp_binary_info` read below reports truthfully
+	 *  rather than falsely claiming the override was cleared.
+	 */
+	ompOverrideClear: () => __TAURI_INVOKE<OmpBinaryInfo>("omp_override_clear"),
+	/**
+	 *  List every setting omp's global config recognizes, current value
+	 *  included. Scope is global-only: `run_omp_cli` runs from a scratch
+	 *  directory, so a project's `.claude/settings.json` can never leak in.
+	 */
+	configList: () => typedError<ConfigEntry[], CliError>(__TAURI_INVOKE("config_list")),
+	configSet: (key: string, value: string) => typedError<ConfigEntry, CliError>(__TAURI_INVOKE("config_set", { key, value })),
+	configReset: (key: string) => typedError<ConfigEntry, CliError>(__TAURI_INVOKE("config_reset", { key })),
+	/**
+	 *  Remove `key` from the global config file entirely (distinct from
+	 *  `config_reset`, which writes an explicit default value in the record
+	 *  itself).
+	 */
+	configUnset: (key: string) => typedError<null, CliError>(__TAURI_INVOKE("config_unset", { key })),
+	/**
+	 *  The running binary's own description of its settings surface — tabs,
+	 *  groups, labels, descriptions, options, and declarative conditions
+	 *  (ADR-0011 §"schema/structure"). #26 renders the omp-tab sections from
+	 *  this; an override binary predating `config schema` degrades that
+	 *  section to Advanced-only, per ADR-0011's fallback paragraph.
+	 */
+	configSchema: () => typedError<ConfigSchema, CliError>(__TAURI_INVOKE("config_schema")),
+	/**
+	 *  List every OAuth/credential provider omp knows about (Accounts section
+	 *  row set — one row per provider regardless of login state).
+	 */
+	authProvidersList: () => typedError<AuthProvider[], CliError>(__TAURI_INVOKE("auth_providers_list")),
+	/**
+	 *  List every stored OAuth account across every provider. `omp token` has
+	 *  no bulk-listing mode (`--list` requires a provider positional argument),
+	 *  so this calls it once per provider from the same `auth-broker list
+	 *  --json` catalog and aggregates; a provider with nothing stored (the
+	 *  common case — `token <provider> --list` exits non-zero with "No OAuth
+	 *  accounts found…") contributes no rows rather than failing the whole
+	 *  list. Only a failure to resolve/spawn the binary at all propagates, so
+	 *  one CLI quirk on one of ~70 providers can never blank the section.
+	 */
+	authAccountsList: () => typedError<AuthAccount[], CliError>(__TAURI_INVOKE("auth_accounts_list")),
+	/**
+	 *  Log a provider out of omp's own credential store. There is no RPC
+	 *  equivalent (`login` exists on the rpc-ui protocol, `logout` does not),
+	 *  and unlike `login` this needs no OAuth round trip or running session —
+	 *  it's a direct credential-store mutation, always safe to shell out for.
+	 *  `omp auth-broker logout <id>` succeeds unconditionally (even for a
+	 *  provider with nothing stored), so this only ever fails via the usual
+	 *  `CliError` paths (binary unresolvable/unspawnable).
+	 */
+	authLogout: (providerId: string) => typedError<null, CliError>(__TAURI_INVOKE("auth_logout", { providerId })),
+	/**
+	 *  omp's own model catalog (ADR-0011 "Bespoke sections"): every model
+	 *  across every provider with at least one credential present. Returns
+	 *  `{ models: [] }` — not an error — when omp has no credentials
+	 *  configured at all (note `04-omp-cli-surface.md` §6); the Models section
+	 *  renders that as an empty catalog, not a degraded state.
+	 * 
+	 *  `async`, delegating to `blocking` (`omp_cli.rs`): Tauri runs non-async
+	 *  commands on the main thread, which would freeze the webview for the
+	 *  duration of the `omp models` subprocess.
+	 */
+	modelsList: () => typedError<ModelsCatalog, CliError>(__TAURI_INVOKE("models_list")),
 };
 
 /** Events */
@@ -122,6 +253,52 @@ export const events = {
 };
 
 /* Types */
+/**
+ *  The four values ADR-0011 says structurally cannot live in omp. Every
+ *  field defaults to "unset" (`Theme::System`, `None`) so a brand-new file
+ *  (or a corrupt one, per `read_file`) renders identically to one that was
+ *  never written.
+ */
+export type AppPreferences = {
+	theme?: Theme,
+	/**
+	 *  Power-user override of the omp binary to run (ADR-0004's settings
+	 *  escape hatch); `None` runs the resolved default (env override, dev
+	 *  binary, or bundled pin — see `omp::resolve_omp_path`).
+	 */
+	ompPath?: string | null,
+	/**  Override for the Chromium executable the Browser Pane launches. */
+	chromiumPath?: string | null,
+	/**
+	 *  Default working directory new sessions spawn into; `None` falls
+	 *  back to `omp_start`'s own default (the user's home directory).
+	 */
+	defaultWorkingDirectory?: string | null,
+};
+
+/**
+ *  One stored OAuth account for a provider, parsed from `omp token
+ *  <provider> --list`'s text output (`"<position>. <identity>"` per line —
+ *  `token` has no `--json` flag). `position` is the 1-based index `omp
+ *  token <provider> --account <position>` expects.
+ */
+export type AuthAccount = {
+	providerId: string,
+	position: number,
+	identity: string,
+};
+
+/**
+ *  One OAuth/credential provider omp's auth broker knows about, exactly as
+ *  `omp auth-broker list --json` reports it (69 entries as of the pin this
+ *  was captured against — LLM providers, web-search providers, and local
+ *  OpenAI-compatible servers alike; not just chat-model providers).
+ */
+export type AuthProvider = {
+	id: string,
+	name: string,
+};
+
 /**  Errors returned from Shell Bridge commands. */
 export type BridgeError = { type: "binaryNotFound"; message: string } | { type: "spawnFailed"; message: string } | { type: "writeFailed"; message: string } | { type: "killFailed"; message: string } | { type: "unknownSession" };
 
@@ -170,6 +347,101 @@ export type ChromiumInstallEvent = {
 export type ChromiumInstallPhase = "resolving" | "downloading" | "extracting";
 
 /**
+ *  Where `preferences_effective`'s Chromium value came from — the
+ *  specta-typed mirror of `browser::ChromiumSource`.
+ */
+export type ChromiumPathSource = 
+/**  `OMP_GUI_CHROMIUM_PATH` or `PUPPETEER_EXECUTABLE_PATH`. */
+"env" | 
+/**  The App Preferences `chromiumPath` (#22). */
+"preference" | 
+/**  A `@puppeteer/browsers`-managed cache scan. */
+"cache" | 
+/**  Nothing resolved. */
+"none";
+
+/**
+ *  Errors from an omp CLI shell-out. Every omp-backed bridge command
+ *  (config, auth, models) rejects with this — see the module doc.
+ */
+export type CliError = 
+/**
+ *  omp could not be resolved, spawned, or its output parsed — a
+ *  binary/environment problem, not a value the user typed.
+ */
+{ type: "unavailable"; stage: CliStage; message: string } | 
+/**  omp ran and exited non-zero: its own validation/usage error text. */
+{ type: "rejected"; message: string };
+
+/**
+ *  Which step of an omp CLI shell-out failed. A non-zero exit is always
+ *  `CliError::Rejected`, omp's own validation speaking, never a
+ *  transport-stage failure.
+ */
+export type CliStage = "resolve" | "spawn" | "parse";
+
+/**
+ *  One entry from `omp config list --json`, keyed by dotted setting path
+ *  (e.g. `browser.relay`). `value` is `None` when the setting has never
+ *  been explicitly overridden (its default applies) or when `redacted` is
+ *  true — omp never echoes a credential-shaped value even when set.
+ */
+export type ConfigEntry = {
+	key: string,
+	value: JsonValue | null,
+	/**  `"boolean" | "string" | "number" | "enum" | "array" | "record"`. */
+	valueType: string,
+	description: string,
+	redacted?: boolean,
+};
+
+/**
+ *  `omp config schema --json`'s envelope (ADR-0011 §"schema/structure";
+ *  contract `00-contracts.md` §F). Consumed by #26 for the schema-driven
+ *  omp tabs; #24 only needs it to exist and degrade gracefully on an
+ *  override binary that predates it (`CliError::Unavailable{stage:Parse}`
+ *  on an old binary's missing `schema` action, or `{stage:Rejected}` on a
+ *  binary whose `--help` doesn't even list the action).
+ */
+export type ConfigSchema = {
+	version: string,
+	tabs: SchemaTab[],
+	settings: SchemaEntry[],
+};
+
+export type EffectiveChromiumPath = {
+	/**
+	 *  The Chromium executable the Browser Pane would actually launch, or
+	 *  `None` when nothing resolved anywhere.
+	 */
+	value: string | null,
+	source: ChromiumPathSource,
+	/**
+	 *  The primary override env var's name (`browser.rs`'s
+	 *  `CHROMIUM_OVERRIDE_ENV`), for the row's description text — never a
+	 *  second, driftable copy of the string.
+	 */
+	envVar: string,
+};
+
+export type EffectivePreferences = {
+	workingDirectory: EffectiveWorkingDirectory,
+	chromium: EffectiveChromiumPath,
+};
+
+export type EffectiveWorkingDirectory = {
+	/**  The directory a fresh session would actually spawn into. */
+	value: string,
+	source: WorkingDirectorySource,
+	/**
+	 *  The raw, unresolved `defaultWorkingDirectory` preference (even when
+	 *  it no longer names an existing directory), so the Settings row can
+	 *  show the user what they set alongside the effective value.
+	 */
+	preferred: string | null,
+};
+
+/**
  *  Result of probing whether a process outside this app currently has a
  *  session file open (best-effort; see module doc).
  */
@@ -179,10 +451,102 @@ export type ForeignLockProbe = {
 	pids: number[],
 };
 
+/**
+ *  A minimal JSON value good enough for arbitrary config values,
+ *  defaults, and condition operands — a hand-rolled analog of
+ *  `serde_json::Value` whose `Number` variant is a plain `f64` rather
+ *  than `serde_json::Number`'s internal i64/u64 representation, which
+ *  `specta-typescript` refuses to export at all (its BigInt guard: 64-bit
+ *  integers get silently truncated by `JSON.parse`, so specta forces an
+ *  explicit, lossy-but-safe choice — see `specta_typescript::Error`'s
+ *  "BigInt Forbidden" docs). Every value flowing through this bridge is a
+ *  user-facing setting, never an opaque 64-bit id, so `f64` is exact for
+ *  anything that matters here. Deserializes directly from omp's raw JSON
+ *  output (`run_omp_json` parses straight into this type — there is no
+ *  intermediate `serde_json::Value` step).
+ */
+export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
+
+/**
+ *  Per-model token cost, USD per million tokens (`omp models --json`'s
+ *  `cost` object; note `04-omp-cli-surface.md` §6).
+ */
+export type ModelCost = {
+	input: number | null,
+	output: number | null,
+	cacheRead: number | null,
+	cacheWrite: number | null,
+};
+
+/**
+ *  One entry from `omp models --json`'s flat `models` array. Only the
+ *  fields the Models section renders are modeled here (provider grouping,
+ *  id/name/selector, context window and cost in mono) — `maxTokens`,
+ *  `reasoning`, `thinking`, `input` exist on omp's own `ModelEntry` but are
+ *  omitted since no row in this section shows them.
+ */
+export type ModelEntry = {
+	/**
+	 *  Provider id, e.g. `"anthropic"` — omp's catalog carries no separate
+	 *  per-provider display name, so the GUI groups by and labels with
+	 *  this id directly.
+	 */
+	provider: string,
+	id: string,
+	/**
+	 *  `"<provider>/<id>"` — the canonical string `enabledModels` patterns
+	 *  and `modelRoles` values use everywhere else in config.
+	 */
+	selector: string,
+	name: string,
+	/**
+	 *  `f64`, not `u64`: specta-typescript refuses to export 64-bit
+	 *  integer types at all (its BigInt guard — see `config.rs`'s
+	 *  `JsonValue` doc comment for the same tradeoff). Token counts here
+	 *  are well under 2^53, so this loses no precision.
+	 */
+	contextWindow: number | null,
+	cost: ModelCost,
+};
+
+/**
+ *  `omp models --json`'s exact envelope (note `04-omp-cli-surface.md` §6):
+ *  `{ "models": [...] }`, a flat array not grouped by provider — the
+ *  Models section groups it client-side. Deserializes directly from omp's
+ *  raw JSON output (field names already match; no intermediate wire type
+ *  is needed, unlike `config.rs`'s `RawConfigValue`).
+ */
+export type ModelsCatalog = {
+	models: ModelEntry[],
+};
+
+/**
+ *  What the App Preferences omp-binary row renders: the resolved path and
+ *  version, its source (Bundled / Override badge), the pin's own version
+ *  (so "bundled is 18.1.10" can be shown beside a non-bundled resolution),
+ *  and whether `OMP_GUI_OMP_PATH` is currently in play (it always wins
+ *  resolution, so a committed preference override has no effect while
+ *  it's set — the row explains that rather than hiding it).
+ */
+export type OmpBinaryInfo = {
+	path: string,
+	source: OmpBinarySource,
+	version: string | null,
+	bundledVersion: string,
+	envOverrideActive: boolean,
+};
+
 /**  Where the omp binary was resolved from, in priority order (ADR-0004). */
 export type OmpBinarySource = 
 /**  `OMP_GUI_OMP_PATH` power-user override. */
 "override" | 
+/**
+ *  A path committed through the App Preferences omp-binary row
+ *  (`omp_override_commit`), gated behind `smoke::smoke_test` and the
+ *  GUI's compatibility-risk acknowledgement (ADR-0004). Loses to
+ *  `Override` when `OMP_GUI_OMP_PATH` is also set.
+ */
+"preferenceOverride" | 
 /**  Repo-local download from `scripts/fetch-omp.mjs` (development). */
 "devBinary" | 
 /**  Binary bundled into the app at build time. */
@@ -200,12 +564,41 @@ export type OmpFrameEvent = {
 	line: string,
 };
 
+/**
+ *  Either the smoke test rejected the candidate, or (once smoke passed)
+ *  writing it to App Preferences failed. Untagged: `SmokeFailure` and
+ *  `PreferencesError` are each self-describing (`stage`/`message` vs.
+ *  `type`/`message`), so the GUI narrows on `"stage" in error`.
+ */
+export type OmpOverrideError = SmokeFailure | PreferencesError;
+
 export type OmpStartInfo = {
 	sessionId: string,
 	version: string,
 	path: string,
 	source: OmpBinarySource,
 };
+
+/**
+ *  Filesystem facts about `path`, for the working-directory/Chromium-path
+ *  rows (#22) to validate an edit inline before committing it — a
+ *  directory picker's escape hatch, since no Tauri dialog plugin is wired
+ *  in yet (`01-shell-bridge.md`). Deliberately infallible: a bad or
+ *  missing path is information for the caller to render, not an error.
+ */
+export type PathProbe = {
+	exists: boolean,
+	isDir: boolean,
+	isExecutable: boolean,
+};
+
+/**  Errors returned from App Preferences Shell Bridge commands. */
+export type PreferencesError = { type: "writeFailed"; message: string } | 
+/**
+ *  `preferences_effective` (#22) could not resolve the user's home
+ *  directory, the last-resort fallback for the working-directory row.
+ */
+{ type: "homeDirUnavailable"; message: string };
 
 /**
  *  Info the frontend needs to reflect the Relay toggle's state — the
@@ -232,6 +625,47 @@ export type RelayInfo = {
 	 *  (`relay/server.ts`).
 	 */
 	extensionConnected: boolean,
+};
+
+/**
+ *  Declarative visibility condition (ADR-0011 §"schema/structure",
+ *  contract §F): evaluated live in the app against the values the binary
+ *  reports, never baked in at build time.
+ */
+export type SchemaCondition = { kind: "setting"; dependsOn: string; equals: JsonValue } | { kind: "platform"; platform: string } | { kind: "terminal"; capability: string };
+
+/**
+ *  One `SETTINGS_SCHEMA` entry with its UI metadata. `tab`/`group`/`label`/
+ *  `description` are `None` for keys omp's own settings panel never shows
+ *  (the Advanced-only keys, issue #19 story #16); `options` carries either
+ *  an array of `{ value, label, description? }` submenu choices, the
+ *  literal string `"runtime"` (choices the app itself resolves — e.g.
+ *  installed theme names), or `null` — left as raw JSON rather than a
+ *  second Rust enum since no bridge command here branches on its shape.
+ *  `values` (enum choices) is additive beyond the contract's field list:
+ *  `config list --json` never carries it (note `04-omp-cli-surface.md`
+ *  §1), so this is the only source of enum choices for a generic editor.
+ */
+export type SchemaEntry = {
+	key: string,
+	type: string,
+	default: JsonValue | null,
+	values: string[] | null,
+	tab: string | null,
+	group: string | null,
+	label: string | null,
+	description: string | null,
+	warning: string | null,
+	options: JsonValue | null,
+	ordered?: boolean,
+	secret?: boolean,
+	condition: SchemaCondition | null,
+};
+
+export type SchemaTab = {
+	id: string,
+	label: string,
+	groups: string[],
 };
 
 /**  One on-disk session file, lightweight metadata only (see module doc). */
@@ -305,6 +739,66 @@ export type SessionsError =
 { type: "homeDirUnavailable" } | 
 /**  An I/O error while walking or reading the sessions directory. */
 { type: "ioFailed"; message: string };
+
+export type SmokeFailure = {
+	stage: SmokeStage,
+	message: string,
+};
+
+export type SmokeReport = {
+	/**
+	 *  The negotiated omp version, from `<path> --version`; falls back to
+	 *  the `ready` frame's own `version` field (if present) when the
+	 *  `--version` invocation itself fails.
+	 */
+	version: string,
+};
+
+/**
+ *  Which step of the smoke sequence failed, serialized lowercase so it
+ *  reads as machine truth (Geist Mono, red-on-wash) in the override row
+ *  rather than prose.
+ */
+export type SmokeStage = 
+/**
+ *  The process could not be spawned at all (missing file, not
+ *  executable, permission denied).
+ */
+"launch" | 
+/**
+ *  The process spawned but never produced a valid `ready` frame within
+ *  the timeout (exited early, wrote garbage, or hung).
+ */
+"ready" | 
+/**
+ *  The `ready` frame arrived (and protocol v2 was negotiated when
+ *  advertised) but the canned `get_state` command never received a
+ *  correlated, successful response within the timeout.
+ */
+"roundtrip";
+
+/**
+ *  The app's chosen appearance. `System` follows the OS's
+ *  `prefers-color-scheme` live; `Light`/`Dark` pin one palette.
+ */
+export type Theme = "system" | "light" | "dark";
+
+/**
+ *  Where `preferences_effective`'s working-directory value came from —
+ *  the specta-typed mirror of `omp::StartCwdSource`'s non-`Requested`
+ *  variants (a fresh session, which is what this command describes, never
+ *  has a `requested` resume cwd).
+ */
+export type WorkingDirectorySource = 
+/**
+ *  The App Preferences `defaultWorkingDirectory` named an existing
+ *  directory.
+ */
+"preference" | 
+/**  No preference was set at all. */
+"home" | 
+/**  A preference was set but no longer names an existing directory. */
+"fallback";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

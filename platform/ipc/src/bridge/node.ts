@@ -4,18 +4,39 @@
  * real pinned binary — never imported by the app bundle.
  */
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { open, readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import type { ShellBridge, OmpStartInfo } from "./shell-bridge";
+import {
+  open,
+  readdir,
+  stat,
+  readFile,
+  writeFile,
+  mkdir,
+  rename,
+  mkdtemp,
+  rm,
+} from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { BridgeCommandError, type ShellBridge, type OmpStartInfo } from "./shell-bridge";
+import { RpcSession, type RpcTransport } from "../session/session";
 import type {
   OmpFrameEvent,
   OmpExitEvent,
   SessionFileEntry,
   SessionPreview,
   SessionPreviewMessage,
+  AppPreferences,
+  SmokeReport,
+  SmokeStage,
+  ConfigEntry,
+  ConfigSchema,
+  CliError,
+  AuthProvider,
+  AuthAccount,
+  ModelsCatalog,
 } from "../bindings/bindings.gen";
 
 /** Mirrors `crates/shell/src/sessions.rs`'s scan window constants exactly,
@@ -41,6 +62,83 @@ function sessionsRoot(): string {
   if (explicit) return join(explicit, "sessions");
   const configDir = process.env.PI_CONFIG_DIR?.trim() || ".omp";
   return join(homedir(), configDir, "agent", "sessions");
+}
+
+/** Mirrors `crates/shell/src/preferences.rs`'s `PREFERENCES_VERSION`. */
+const PREFERENCES_VERSION = 1;
+
+/** Mirrors `crates/shell/src/preferences.rs`'s `AppPreferences::default()`. */
+const DEFAULT_APP_PREFERENCES: AppPreferences = {
+  theme: "system",
+  ompPath: null,
+  chromiumPath: null,
+  defaultWorkingDirectory: null,
+};
+
+/**
+ * Pure read of the preferences file at `path`, mirroring
+ * `preferences.rs`'s `read_file`: a missing file, unparseable JSON, or JSON
+ * that isn't an object all yield the defaults. Never writes, so a corrupt
+ * file is left exactly as found.
+ */
+async function readPreferencesFile(path: string): Promise<AppPreferences> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch {
+    return { ...DEFAULT_APP_PREFERENCES };
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) {
+      return { ...DEFAULT_APP_PREFERENCES };
+    }
+    const value = parsed as Record<string, unknown>;
+    return {
+      theme: value.theme === "light" || value.theme === "dark" ? value.theme : "system",
+      ompPath: typeof value.ompPath === "string" ? value.ompPath : null,
+      chromiumPath: typeof value.chromiumPath === "string" ? value.chromiumPath : null,
+      defaultWorkingDirectory:
+        typeof value.defaultWorkingDirectory === "string" ? value.defaultWorkingDirectory : null,
+    };
+  } catch {
+    return { ...DEFAULT_APP_PREFERENCES };
+  }
+}
+
+/**
+ * Overlays `prefs`' known fields (plus `version`) onto whatever JSON object
+ * already exists on disk at `path`, so unknown keys survive, and writes
+ * atomically (tmp file + rename) — mirroring `preferences.rs`'s
+ * `write_file`, so the seam test drives the same on-disk contract the Rust
+ * shell implements.
+ */
+async function writePreferencesFile(path: string, prefs: AppPreferences): Promise<AppPreferences> {
+  let root: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      root = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Missing or unparseable — start from an empty object, same as the Rust side.
+  }
+
+  root = {
+    ...root,
+    theme: prefs.theme ?? "system",
+    ompPath: prefs.ompPath ?? null,
+    chromiumPath: prefs.chromiumPath ?? null,
+    defaultWorkingDirectory: prefs.defaultWorkingDirectory ?? null,
+    version: PREFERENCES_VERSION,
+  };
+
+  await mkdir(dirname(path), { recursive: true });
+  const tmpPath = `${path}.tmp`;
+  await writeFile(tmpPath, JSON.stringify(root, null, 2));
+  await rename(tmpPath, path);
+
+  return readPreferencesFile(path);
 }
 
 interface SessionHeader {
@@ -186,12 +284,351 @@ async function readSessionPreviewFromDisk(path: string): Promise<SessionPreview>
   return { path, messages, truncated: hitMessageCap || hitByteCap };
 }
 
+/**
+ * Rejected by `smokeTestBinary` with the failed stage attached, mirroring
+ * `crates/shell/src/smoke.rs`'s `SmokeFailure { stage, message }` so a
+ * seam test (or a future node-only caller) can assert on `.stage` the
+ * same way the GUI reads the Rust command's typed error.
+ */
+export class SmokeTestError extends Error {
+  constructor(
+    readonly stage: SmokeStage,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SmokeTestError";
+  }
+}
+
+/** Per-stage timeout, mirroring `smoke.rs`'s `STAGE_TIMEOUT`. */
+const SMOKE_TIMEOUT_MS = 10_000;
+
+/** Merges `PI_CODING_AGENT_DIR` into `process.env` when `agentDir` is
+ * given; otherwise returns `process.env` untouched — the one env-merge
+ * every spawn in this module shares. */
+function spawnEnv(agentDir: string | undefined): NodeJS.ProcessEnv {
+  return agentDir ? { ...process.env, PI_CODING_AGENT_DIR: agentDir } : process.env;
+}
+
+/** `<binaryPath> --version`, trimmed, run with `env` — the one version
+ * probe every caller in this module shares. */
+function readVersion(binaryPath: string, env: NodeJS.ProcessEnv): string {
+  return execFileSync(binaryPath, ["--version"], { encoding: "utf8", env }).trim();
+}
+
+/**
+ * TypeScript mirror of `crates/shell/src/smoke.rs`'s `smoke_test`: spawn
+ * `<binaryPath> --mode rpc-ui` in a fresh scratch cwd with
+ * `PI_CODING_AGENT_DIR` pointed at a fresh scratch agent dir (so a
+ * candidate under test never touches real config/credentials or writes a
+ * session file anywhere the user would see it), wait for the `ready`
+ * frame, negotiate protocol v2 when advertised, complete one canned
+ * `get_state` round trip, then kill. Reuses `RpcSession.start`/`command`
+ * for the actual framing instead of reimplementing it, since this helper
+ * (unlike the Rust copy, which must stay dependency-free for the CI smoke
+ * gate) already lives in the TypeScript package that owns `RpcSession`.
+ * Exists so `nodeBridge`'s seam tests can prove a fake executable fails
+ * with a named stage without spawning the Tauri shell.
+ */
+async function smokeTestBinary(binaryPath: string): Promise<SmokeReport> {
+  const scratchCwd = mkdtempSync(join(tmpdir(), "omp-gui-smoke-cwd-"));
+  const scratchAgentDir = mkdtempSync(join(tmpdir(), "omp-gui-smoke-agent-"));
+  const cleanup = () => {
+    rmSync(scratchCwd, { recursive: true, force: true });
+    rmSync(scratchAgentDir, { recursive: true, force: true });
+  };
+
+  let child: ChildProcess;
+  try {
+    child = spawn(binaryPath, ["--mode", "rpc-ui"], {
+      cwd: scratchCwd,
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: scratchAgentDir,
+        // Mirrors `smoke.rs`'s placeholder: omp refuses to enter rpc-ui
+        // mode at all ("No models available") without some provider
+        // credential visible, even though this sequence only ever sends
+        // `get_state` and never a real `prompt`.
+        ANTHROPIC_API_KEY: "sk-ant-omp-gui-smoke-test-placeholder",
+      },
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+  } catch (error) {
+    cleanup();
+    throw new SmokeTestError("launch", error instanceof Error ? error.message : String(error));
+  }
+
+  const spawnError = new Promise<never>((_, reject) => {
+    child.once("error", (error) => reject(new SmokeTestError("launch", error.message)));
+  });
+
+  try {
+    if (!child.stdin || !child.stdout) {
+      throw new SmokeTestError("launch", "failed to pipe omp stdio");
+    }
+    const reader = createInterface({ input: child.stdout });
+    const transport: RpcTransport = {
+      send: (line) => {
+        child.stdin?.write(`${line}\n`);
+      },
+      onLine: (handler) => {
+        reader.on("line", handler);
+        return () => reader.off("line", handler);
+      },
+      onExit: (handler) => {
+        child.once("exit", handler);
+        return () => {
+          child.off("exit", handler);
+        };
+      },
+    };
+
+    let session: RpcSession;
+    try {
+      session = await Promise.race([
+        RpcSession.start(transport, {
+          readyTimeoutMs: SMOKE_TIMEOUT_MS,
+          commandTimeoutMs: SMOKE_TIMEOUT_MS,
+        }),
+        spawnError,
+      ]);
+    } catch (error) {
+      if (error instanceof SmokeTestError) throw error;
+      throw new SmokeTestError("ready", error instanceof Error ? error.message : String(error));
+    }
+
+    try {
+      await Promise.race([session.command({ type: "get_state" }), spawnError]);
+    } catch (error) {
+      throw new SmokeTestError("roundtrip", error instanceof Error ? error.message : String(error));
+    } finally {
+      session.close();
+    }
+
+    const version = readVersion(binaryPath, process.env);
+    return { version };
+  } finally {
+    child.kill();
+    cleanup();
+  }
+}
+
+/** Raw stdout of one `runOmpCli` invocation. */
+interface CliOutput {
+  stdout: string;
+}
+
+/**
+ * The Node mirror of `crates/shell/src/omp_cli.rs`'s `run_omp_cli`: runs
+ * the omp binary with a fresh, guaranteed-empty scratch directory as
+ * `cwd` (ADR-0011 — never the directory `nodeBridge` itself was
+ * constructed with, so a project's `.claude/settings.json` there can
+ * never merge into a config read/write), and `PI_CODING_AGENT_DIR` set to
+ * `agentDir` when given (contract `00-contracts.md`'s Hotspot note:
+ * "nodeBridge(binary, cwd, options) must accept an agentDir option that
+ * sets PI_CODING_AGENT_DIR for every process it spawns"); omitted
+ * `agentDir` leaves `process.env` untouched, so an outer
+ * `PI_CODING_AGENT_DIR` (set by the invoking test runner, per the
+ * session/model/login seam tests) still applies. A non-zero exit rejects
+ * with `BridgeCommandError<CliError>` shaped exactly like the Rust side's
+ * `CliError::Rejected` (omp's own stderr, falling back to stdout, both
+ * trimmed) so a seam test drives one contract regardless of which bridge
+ * backs it.
+ */
+async function runOmpCli(
+  binaryPath: string,
+  args: string[],
+  agentDir: string | undefined,
+): Promise<CliOutput> {
+  const scratch = await mkdtemp(join(tmpdir(), "omp-gui-config-scratch-"));
+  try {
+    return await new Promise<CliOutput>((resolve, reject) => {
+      const child = spawn(binaryPath, args, {
+        cwd: scratch,
+        env: spawnEnv(agentDir),
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString("utf8");
+      });
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString("utf8");
+      });
+      child.on("error", (error) => {
+        reject(
+          new BridgeCommandError<CliError>({
+            type: "unavailable",
+            stage: "spawn",
+            message: `failed to spawn ${binaryPath}: ${error.message}`,
+          }),
+        );
+      });
+      child.on("close", (code) => {
+        if (code !== 0) {
+          const message = stderr.trim() || stdout.trim();
+          reject(new BridgeCommandError<CliError>({ type: "rejected", message }));
+          return;
+        }
+        resolve({ stdout });
+      });
+    });
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
+/** `runOmpCli`, then parses `stdout` as JSON — the Node mirror of
+ * `run_omp_json`. A parse failure rejects with
+ * `CliError::Unavailable{stage:"parse"}`. */
+async function runOmpJson<T>(
+  binaryPath: string,
+  args: string[],
+  agentDir: string | undefined,
+): Promise<T> {
+  const { stdout } = await runOmpCli(binaryPath, args, agentDir);
+  try {
+    return JSON.parse(stdout) as T;
+  } catch (error) {
+    throw new BridgeCommandError<CliError>({
+      type: "unavailable",
+      stage: "parse",
+      message: `failed to parse omp's JSON output: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+/** Wire shape of one value in `omp config list --json`'s object — see
+ * `crates/shell/src/config.rs`'s `RawConfigValue` for the Rust mirror of
+ * this exact parse. */
+interface RawConfigValue {
+  value?: unknown;
+  type: string;
+  description?: string;
+  redacted?: boolean;
+}
+
+async function listConfigEntries(
+  binaryPath: string,
+  agentDir: string | undefined,
+): Promise<ConfigEntry[]> {
+  const raw = await runOmpJson<Record<string, RawConfigValue>>(
+    binaryPath,
+    ["config", "list", "--json"],
+    agentDir,
+  );
+  return Object.entries(raw)
+    .map(([key, entry]) => ({
+      key,
+      value: (entry.value ?? null) as ConfigEntry["value"],
+      valueType: entry.type,
+      description: entry.description ?? "",
+      redacted: entry.redacted ?? false,
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** Re-reads the list after a `set`/`reset` and returns the one entry that
+ * changed — mirrors `config.rs`'s `entry_after` (`omp config set|reset
+ * --json` only echoes `{key, value}`, never `type`/`description`). */
+async function configEntryAfter(
+  binaryPath: string,
+  agentDir: string | undefined,
+  key: string,
+): Promise<ConfigEntry> {
+  const entries = await listConfigEntries(binaryPath, agentDir);
+  const entry = entries.find((candidate) => candidate.key === key);
+  if (!entry) {
+    throw new BridgeCommandError<CliError>({
+      type: "unavailable",
+      stage: "parse",
+      message: `omp config list --json has no entry for "${key}" after the write`,
+    });
+  }
+  return entry;
+}
 interface Session {
   child: ChildProcess;
   cleanup: () => void;
 }
 
-export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
+/** Constructor options `nodeBridge` accepts beyond the binary path and
+ * default cwd. `preferencesPath` is the file the App Preferences seam test
+ * (and controller test) point at — a bridge built without it simply has no
+ * `preferencesRead`/`preferencesWrite` methods (both optional on
+ * `ShellBridge`), and `start()` never consults a `defaultWorkingDirectory`
+ * preference either (#22). `agentDir`, when set, becomes `PI_CODING_AGENT_DIR`
+ * for every process this bridge spawns, so each seam test gets its own
+ * hermetic agent dir instead of sharing (or leaking into) the real
+ * `~/.omp` — additive: omitted, spawned processes simply inherit
+ * `process.env` unchanged. */
+export interface NodeBridgeOptions {
+  preferencesPath?: string;
+  agentDir?: string;
+}
+
+/**
+ * Mirrors `crates/shell/src/omp.rs`'s `resolve_start_cwd` precedence
+ * exactly (#22), so `nodeBridge.start()` behaves like the real Tauri
+ * shell's `omp_start`: an explicit `requested` directory (a resume's
+ * recorded cwd) always wins when it exists; otherwise the App Preferences
+ * `defaultWorkingDirectory` wins when it names an existing directory (only
+ * checked when this bridge was built with a `preferencesPath`); otherwise
+ * the constructor's own `fallbackCwd`.
+ */
+async function resolveStartCwd(
+  requested: string | undefined,
+  fallbackCwd: string,
+  preferencesPath: string | undefined,
+): Promise<string> {
+  const trimmedRequested = requested?.trim();
+  if (trimmedRequested && (await isExistingDirectory(trimmedRequested))) {
+    return trimmedRequested;
+  }
+  if (preferencesPath) {
+    const prefs = await readPreferencesFile(preferencesPath);
+    const preferred = prefs.defaultWorkingDirectory?.trim();
+    if (preferred && (await isExistingDirectory(preferred))) {
+      return preferred;
+    }
+  }
+  return fallbackCwd;
+}
+
+async function isExistingDirectory(path: string): Promise<boolean> {
+  try {
+    const info = await stat(path);
+    return info.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Parses `omp token <provider> --list`'s stdout defensively, mirroring
+ * `auth.rs`'s `parse_account_lines`: one `"N. label"` line per stored
+ * account, any other line skipped rather than failing the whole parse. */
+function parseAccountLines(stdout: string, providerId: string): AuthAccount[] {
+  const accounts: AuthAccount[] = [];
+  for (const rawLine of stdout.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const dot = line.indexOf(".");
+    if (dot === -1) continue;
+    const position = Number.parseInt(line.slice(0, dot).trim(), 10);
+    if (!Number.isFinite(position)) continue;
+    const identity = line.slice(dot + 1).trim();
+    if (!identity) continue;
+    accounts.push({ providerId, position, identity });
+  }
+  return accounts;
+}
+
+export function nodeBridge(
+  binaryPath: string,
+  cwd: string,
+  options: NodeBridgeOptions = {},
+): ShellBridge {
   const sessions = new Map<string, Session>();
   const frameHandlers = new Set<(e: OmpFrameEvent) => void>();
   const exitHandlers = new Set<(e: OmpExitEvent) => void>();
@@ -206,15 +643,18 @@ export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
     for (const handler of exitHandlers) handler(event);
   };
 
+  const { preferencesPath, agentDir } = options;
+  const env = spawnEnv(agentDir);
+
   return {
-    start(cwdOverride?: string): Promise<OmpStartInfo> {
+    async start(cwdOverride?: string): Promise<OmpStartInfo> {
       const sessionId = randomUUID();
-      const version = execFileSync(binaryPath, ["--version"], {
-        encoding: "utf8",
-      }).trim();
+      const resolvedCwd = await resolveStartCwd(cwdOverride, cwd, preferencesPath);
+      const version = readVersion(binaryPath, env);
       const child = spawn(binaryPath, ["--mode", "rpc-ui"], {
-        cwd: cwdOverride ?? cwd,
+        cwd: resolvedCwd,
         stdio: ["pipe", "pipe", "inherit"],
+        env,
       });
 
       if (!child.stdin || !child.stdout) {
@@ -314,5 +754,58 @@ export function nodeBridge(binaryPath: string, cwd: string): ShellBridge {
     },
 
     readSessionPreview: (path: string) => readSessionPreviewFromDisk(path),
+
+    ompSmokeTest: (path: string) => smokeTestBinary(path),
+
+    ...(preferencesPath
+      ? {
+          preferencesRead: () => readPreferencesFile(preferencesPath),
+          preferencesWrite: (prefs: AppPreferences) => writePreferencesFile(preferencesPath, prefs),
+        }
+      : {}),
+
+    configList: () => listConfigEntries(binaryPath, agentDir),
+    configSet: async (key: string, value: string) => {
+      await runOmpCli(binaryPath, ["config", "set", key, value, "--json"], agentDir);
+      return configEntryAfter(binaryPath, agentDir, key);
+    },
+    configReset: async (key: string) => {
+      await runOmpCli(binaryPath, ["config", "reset", key, "--json"], agentDir);
+      return configEntryAfter(binaryPath, agentDir, key);
+    },
+    configUnset: async (key: string) => {
+      await runOmpCli(binaryPath, ["config", "unset", key, "--json"], agentDir);
+    },
+    configSchema: () =>
+      runOmpJson<ConfigSchema>(binaryPath, ["config", "schema", "--json"], agentDir),
+    authProvidersList: () =>
+      runOmpJson<AuthProvider[]>(binaryPath, ["auth-broker", "list", "--json"], agentDir),
+    async authAccountsList(): Promise<AuthAccount[]> {
+      const providers = await runOmpJson<AuthProvider[]>(
+        binaryPath,
+        ["auth-broker", "list", "--json"],
+        agentDir,
+      );
+      const accounts: AuthAccount[] = [];
+      for (const provider of providers) {
+        try {
+          const { stdout } = await runOmpCli(
+            binaryPath,
+            ["token", provider.id, "--list"],
+            agentDir,
+          );
+          accounts.push(...parseAccountLines(stdout, provider.id));
+        } catch {
+          // No accounts stored for this provider (or some other
+          // per-provider refusal) — not fatal to the aggregate list,
+          // mirroring `auth.rs`'s `auth_accounts_list`.
+        }
+      }
+      return accounts;
+    },
+    async authLogout(providerId: string): Promise<void> {
+      await runOmpCli(binaryPath, ["auth-broker", "logout", providerId], agentDir);
+    },
+    modelsList: () => runOmpJson<ModelsCatalog>(binaryPath, ["models", "--json"], agentDir),
   };
 }

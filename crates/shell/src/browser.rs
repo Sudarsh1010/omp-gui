@@ -4,12 +4,12 @@
 //! persistent `--user-data-dir` and an ephemeral `--remote-debugging-port`.
 //! omp's builtin browser tool attaches to that same port via its existing
 //! `connected`-kind CDP path (notes/browser.md §2, §9). On launch this
-//! module hands omp that URL itself via `omp config set browser.cdpUrl`
+//! module hands omp that URL itself via `config::write_value`/`unset_value`
 //! (`set_connected_cdp_config`, defined just after `browser_stop` below),
 //! and resets it once the project's last interested party stops the
-//! browser — the same short-lived-CLI-invocation lever `set_relay_config`
-//! (near the bottom of this file) uses for `browser.relay`, sharing its
-//! accepted gap: an omp session only reads config at its own startup (see
+//! browser — the same config-bridge lever `browser_set_relay` (near the
+//! bottom of this file) uses for `browser.relay`, sharing its accepted
+//! gap: an omp session only reads config at its own startup (see
 //! `set_connected_cdp_config`'s doc comment).
 //!
 //! Separately, this module runs its *own* second CDP client (flatten-mode,
@@ -53,7 +53,10 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 
 /// Power-user override, mirrors `OMP_GUI_OMP_PATH`'s naming (ADR-0004).
-const CHROMIUM_OVERRIDE_ENV: &str = "OMP_GUI_CHROMIUM_PATH";
+/// Crate-visible so `preferences.rs`'s `preferences_effective` (#22) can
+/// report the exact env var name the Chromium Path row's description
+/// documents, rather than a second, driftable copy of the string.
+pub(crate) const CHROMIUM_OVERRIDE_ENV: &str = "OMP_GUI_CHROMIUM_PATH";
 /// The ecosystem-standard override that omp's own Chromium resolution also
 /// honors first (notes/browser.md §5) — set once, both processes agree.
 const PUPPETEER_EXECUTABLE_ENV: &str = "PUPPETEER_EXECUTABLE_PATH";
@@ -214,12 +217,26 @@ impl Default for BrowserState {
 }
 
 /// Launch (or, if this project already has one running, attach to) the
-/// per-project Browser Pane Chromium.
+/// per-project Browser Pane Chromium. Runs on a blocking pool thread
+/// (`crate::omp_cli::blocking`), not Tauri's main thread — the Chromium
+/// spawn, DevTools-banner wait, and best-effort omp config write here are
+/// all synchronous I/O.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_launch(
+pub async fn browser_launch(
     app: AppHandle,
-    state: State<'_, BrowserState>,
+    project_path: String,
+) -> Result<BrowserInfo, BrowserError> {
+    crate::omp_cli::blocking(move || {
+        let state = app.state::<BrowserState>();
+        browser_launch_blocking(&app, &state, project_path)
+    })
+    .await
+}
+
+fn browser_launch_blocking(
+    app: &AppHandle,
+    state: &BrowserState,
     project_path: String,
 ) -> Result<BrowserInfo, BrowserError> {
     let canonical =
@@ -236,8 +253,8 @@ pub fn browser_launch(
         }
     }
 
-    let chromium_path = resolve_chromium_executable(&app)?;
-    let user_data_dir = profile_dir_for_project(&app, &canonical)?;
+    let chromium_path = resolve_chromium_executable(app)?;
+    let user_data_dir = profile_dir_for_project(app, &canonical)?;
     std::fs::create_dir_all(&user_data_dir).map_err(|e| BrowserError::ProfileDirFailed {
         message: format!(
             "failed to create profile directory {}: {e}",
@@ -360,11 +377,9 @@ pub fn browser_launch(
     // config write must not fail the launch itself — the pane's
     // screencast and human Takeover driving both work with no dependency
     // on omp ever attaching.
-    if let Ok((omp_path, _source)) = crate::omp::resolve_omp_path(&app) {
-        if let Err(_err) = set_connected_cdp_config(&omp_path, &app, Some(&info.cdp_url)) {
-            #[cfg(debug_assertions)]
-            eprintln!("[browser cdp-config] failed to set browser.cdpUrl: {_err}");
-        }
+    if let Err(_err) = set_connected_cdp_config(app, Some(&info.cdp_url)) {
+        #[cfg(debug_assertions)]
+        eprintln!("[browser cdp-config] failed to set browser.cdpUrl: {_err}");
     }
     Ok(info)
 }
@@ -372,12 +387,22 @@ pub fn browser_launch(
 /// Release this caller's interest in a project's Browser Pane. The Chromium
 /// keeps running (and its persistent profile keeps existing) until every
 /// caller has released it — mirroring omp's own connected-URL refcount
-/// (notes/browser.md §2) — then `BrowserSession::drop` tears it down.
+/// (notes/browser.md §2) — then `BrowserSession::drop` tears it down. Runs
+/// on a blocking pool thread (`crate::omp_cli::blocking`), matching
+/// `browser_launch`.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_stop(
-    app: AppHandle,
-    state: State<'_, BrowserState>,
+pub async fn browser_stop(app: AppHandle, project_path: String) -> Result<(), BrowserError> {
+    crate::omp_cli::blocking(move || {
+        let state = app.state::<BrowserState>();
+        browser_stop_blocking(&app, &state, project_path)
+    })
+    .await
+}
+
+fn browser_stop_blocking(
+    app: &AppHandle,
+    state: &BrowserState,
     project_path: String,
 ) -> Result<(), BrowserError> {
     let key = std::fs::canonicalize(&project_path)
@@ -402,11 +427,9 @@ pub fn browser_stop(
         // `browser.cdpUrl` now that this project's last interested party
         // has released the Chromium (see `set_connected_cdp_config`'s doc
         // comment for why a failure here must not block the teardown).
-        if let Ok((omp_path, _source)) = crate::omp::resolve_omp_path(&app) {
-            if let Err(_err) = set_connected_cdp_config(&omp_path, &app, None) {
-                #[cfg(debug_assertions)]
-                eprintln!("[browser cdp-config] failed to reset browser.cdpUrl: {_err}");
-            }
+        if let Err(_err) = set_connected_cdp_config(app, None) {
+            #[cfg(debug_assertions)]
+            eprintln!("[browser cdp-config] failed to reset browser.cdpUrl: {_err}");
         }
     }
     Ok(())
@@ -416,48 +439,26 @@ pub fn browser_stop(
 /// `connected`-kind CDP path (notes/browser.md §2, §9) can attach —
 /// `browser.cdpUrl` (`config/settings-schema.ts:4509-4519`; omp's settings
 /// resolution checks `browser.relay` *before* this key, so an enabled relay
-/// still wins). Mirrors `set_relay_config`'s `omp config set|reset` shape
-/// and its doc comment in full: this is a short-lived CLI invocation of the
+/// still wins). Mirrors `browser_set_relay`'s `config::write_value`/
+/// `unset_value` shape and its doc comment in full: this is a short-lived
+/// CLI invocation of the
 /// pinned binary, not an RPC call into a running `--mode rpc-ui` session,
 /// so a session already running when a Browser Pane launches or stops
 /// keeps whichever CDP config (or none) it resolved at its own startup —
 /// only omp sessions started *after* this call see it. That gap is
 /// accepted, not closed, by both `browser_launch` and `browser_stop`,
-/// which therefore treat every call here as best-effort.
-fn set_connected_cdp_config(
-    omp_path: &Path,
-    app: &AppHandle,
-    cdp_url: Option<&str>,
-) -> Result<(), BrowserError> {
-    let cwd = app
-        .path()
-        .home_dir()
-        .map_err(|e| BrowserError::CdpConfigFailed {
-            message: e.to_string(),
-        })?;
-    let mut args: Vec<&str> = vec!["config"];
-    match cdp_url {
-        Some(url) => args.extend(["set", "browser.cdpUrl", url]),
-        None => args.extend(["reset", "browser.cdpUrl"]),
-    }
-    let description = args.join(" ");
-    let output = Command::new(omp_path)
-        .args(&args)
-        .current_dir(&cwd)
-        .output()
-        .map_err(|e| BrowserError::CdpConfigFailed {
-            message: format!("failed to run {} {description}: {e}", omp_path.display()),
-        })?;
-    if !output.status.success() {
-        return Err(BrowserError::CdpConfigFailed {
-            message: format!(
-                "`omp {description}` exited with {}: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim(),
-            ),
-        });
-    }
-    Ok(())
+/// which therefore treat every call here as best-effort. Uses the
+/// no-relist `write_value`/`unset_value` lever — this write's own
+/// `ConfigEntry` is never read, so the follow-up `config list`
+/// `set_value`/`reset_value` otherwise do is a second, wasted shell-out.
+fn set_connected_cdp_config(app: &AppHandle, cdp_url: Option<&str>) -> Result<(), BrowserError> {
+    let result = match cdp_url {
+        Some(url) => crate::config::write_value(app, "browser.cdpUrl", url),
+        None => crate::config::unset_value(app, "browser.cdpUrl"),
+    };
+    result.map_err(|e| BrowserError::CdpConfigFailed {
+        message: e.to_string(),
+    })
 }
 
 /// Toggle Takeover for a project's Browser Pane. Two things change:
@@ -500,7 +501,80 @@ pub fn browser_set_takeover(
     Ok(())
 }
 
-/// `PUPPETEER_EXECUTABLE_PATH` / our own override always win; otherwise scan
+/// Where `resolve_chromium_source` picked the Chromium executable from.
+/// Crate-visible so `preferences.rs`'s `preferences_effective` (#22) can
+/// map it onto its own specta-typed `ChromiumPathSource` for the Settings
+/// row, without a second copy of this precedence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChromiumSource {
+    /// `OMP_GUI_CHROMIUM_PATH` or `PUPPETEER_EXECUTABLE_PATH`.
+    Env,
+    /// The App Preferences `chromiumPath` (#22).
+    Preference,
+    /// A `@puppeteer/browsers`-managed cache scan.
+    Cache,
+    /// Nothing resolved.
+    None,
+}
+
+/// `PUPPETEER_EXECUTABLE_PATH` / our own override, checked first by
+/// `resolve_chromium_executable`'s caller (`Ok` only for a path that is
+/// actually a file). Factored out so `preferences_effective` (#22) can
+/// report the same env-var resolution without duplicating it.
+pub(crate) fn chromium_env_override() -> Option<PathBuf> {
+    [CHROMIUM_OVERRIDE_ENV, PUPPETEER_EXECUTABLE_ENV]
+        .into_iter()
+        .find_map(|env_var| std::env::var(env_var).ok())
+        .map(PathBuf::from)
+}
+
+/// Scans the standard `@puppeteer/browsers` cache layout (see
+/// `resolve_chromium_executable`'s doc comment) under both the
+/// ecosystem-default cache and omp's own managed-browser cache. Factored
+/// out so `preferences_effective` (#22) can run the identical scan.
+pub(crate) fn find_cached_chromium(app: &AppHandle) -> Option<PathBuf> {
+    let home = app.path().home_dir().ok()?;
+    let relative = chrome_for_testing_relative_path();
+    [
+        home.join(".cache").join("puppeteer"),
+        home.join(".omp").join("puppeteer"),
+    ]
+    .into_iter()
+    .find_map(|cache_root| find_chrome_in_cache(&cache_root, &relative))
+}
+
+/// Pure precedence resolution, independent of any actual env/filesystem
+/// probing so it is unit-testable: `env_override` (already validated by
+/// the caller's own env-var lookup) wins when it names an existing file;
+/// otherwise a non-empty `preference` (#22's App Preferences
+/// `chromiumPath`) wins when it names an existing file; otherwise
+/// `cache_lookup` runs lazily (only reached when both prior steps miss,
+/// so an idle Settings row never pays for a cache scan a hit env var or
+/// preference would have skipped).
+pub(crate) fn resolve_chromium_source(
+    env_override: Option<PathBuf>,
+    preference: Option<&str>,
+    cache_lookup: impl FnOnce() -> Option<PathBuf>,
+) -> (Option<PathBuf>, ChromiumSource) {
+    if let Some(path) = env_override {
+        if path.is_file() {
+            return (Some(path), ChromiumSource::Env);
+        }
+    }
+    if let Some(dir) = preference.map(str::trim).filter(|s| !s.is_empty()) {
+        let path = PathBuf::from(dir);
+        if path.is_file() {
+            return (Some(path), ChromiumSource::Preference);
+        }
+    }
+    if let Some(path) = cache_lookup() {
+        return (Some(path), ChromiumSource::Cache);
+    }
+    (None, ChromiumSource::None)
+}
+
+/// `PUPPETEER_EXECUTABLE_PATH` / our own override, then the App
+/// Preferences `chromiumPath` override (#22), always win; otherwise scan
 /// the standard `@puppeteer/browsers` cache layout (`<root>/chrome/<platform
 /// >-<buildId>/<relative>`) under both the ecosystem-default cache and omp's
 /// own managed-browser cache, so a *headed* Chrome for Testing the user
@@ -513,28 +587,13 @@ pub fn browser_set_takeover(
 /// failing here must
 /// give the user an actionable next step.
 fn resolve_chromium_executable(app: &AppHandle) -> Result<PathBuf, BrowserError> {
-    for env_var in [CHROMIUM_OVERRIDE_ENV, PUPPETEER_EXECUTABLE_ENV] {
-        if let Ok(path) = std::env::var(env_var) {
-            let path = PathBuf::from(path);
-            if path.is_file() {
-                return Ok(path);
-            }
-        }
-    }
+    let preference = crate::preferences::load_preferences(app).chromium_path;
+    let (found, _source) =
+        resolve_chromium_source(chromium_env_override(), preference.as_deref(), || {
+            find_cached_chromium(app)
+        });
 
-    if let Ok(home) = app.path().home_dir() {
-        let relative = chrome_for_testing_relative_path();
-        for cache_root in [
-            home.join(".cache").join("puppeteer"),
-            home.join(".omp").join("puppeteer"),
-        ] {
-            if let Some(found) = find_chrome_in_cache(&cache_root, &relative) {
-                return Ok(found);
-            }
-        }
-    }
-
-    Err(BrowserError::ChromiumNotFound {
+    found.ok_or_else(|| BrowserError::ChromiumNotFound {
         message: format!(
             "no Chrome for Testing binary found. The Browser Pane needs a headed \
              Chrome for Testing (ADR-0006); omp's builtin browser tool only downloads \
@@ -998,7 +1057,7 @@ async fn serve_frame_client(
 // })` path (notes/browser.md §2) works against it unchanged; the piece this
 // module actually owns is standing that server up (a plain `omp
 // browser-relay` subprocess — the same CLI surface a user could run by
-// hand) and, per `set_relay_config`'s doc comment, the persisted config
+// hand) and, per `browser_set_relay`'s doc comment, the persisted config
 // that makes an omp session pick relay mode at all.
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1079,21 +1138,35 @@ impl Drop for RelayDaemon {
 /// if this app spawned the daemon, it is torn down (`RelayDaemon::drop`).
 ///
 /// omp has no RPC command for mutating a *running* session's settings (see
-/// `set_relay_config`'s doc comment), so a session already streaming when
+/// `browser_set_relay`'s doc comment), so a session already streaming when
 /// this is called keeps whatever kind it resolved at its own startup — the
 /// same, already-accepted gap `set_connected_cdp_config` documents for T9's
 /// `connected` CDP URL. `sessionId` is accepted now so every call site is
 /// ready the moment a per-running-session config lever exists.
+/// Runs on a blocking pool thread (`crate::omp_cli::blocking`), matching
+/// `browser_launch`/`browser_stop`.
 #[tauri::command]
 #[specta::specta]
-pub fn browser_set_relay(
+pub async fn browser_set_relay(
     app: AppHandle,
-    state: State<'_, BrowserState>,
+    session_id: String,
+    enabled: bool,
+) -> Result<RelayInfo, BrowserError> {
+    crate::omp_cli::blocking(move || {
+        let state = app.state::<BrowserState>();
+        browser_set_relay_blocking(&app, &state, session_id, enabled)
+    })
+    .await
+}
+
+fn browser_set_relay_blocking(
+    app: &AppHandle,
+    state: &BrowserState,
     session_id: String,
     enabled: bool,
 ) -> Result<RelayInfo, BrowserError> {
     if !enabled {
-        return disable_relay(&app, &state, &session_id);
+        return disable_relay(app, state, &session_id);
     }
 
     {
@@ -1111,11 +1184,15 @@ pub fn browser_set_relay(
     // daemon up and flip the persisted config outside the lock — mirrors
     // `browser_launch` spawning Chromium before taking `state.sessions`.
     let (omp_path, _source) =
-        crate::omp::resolve_omp_path(&app).map_err(|e| BrowserError::RelayLaunchFailed {
+        crate::omp::resolve_omp_path(app).map_err(|e| BrowserError::RelayLaunchFailed {
             message: e.to_string(),
         })?;
     let child = ensure_relay_daemon(&omp_path, DEFAULT_RELAY_PORT)?;
-    set_relay_config(&omp_path, &app, true)?;
+    crate::config::write_value(app, "browser.relay", "true").map_err(|e| {
+        BrowserError::RelayConfigFailed {
+            message: e.to_string(),
+        }
+    })?;
 
     let mut relay = state.relay.lock();
     let daemon = relay.entry(DEFAULT_RELAY_PORT).or_default();
@@ -1166,11 +1243,11 @@ fn disable_relay(
         // adopted external/omp-lazy-started daemon is left running for
         // whoever else might still be using it.
         state.relay.lock().remove(&DEFAULT_RELAY_PORT);
-        let (omp_path, _source) =
-            crate::omp::resolve_omp_path(app).map_err(|e| BrowserError::RelayConfigFailed {
+        crate::config::unset_value(app, "browser.relay").map_err(|e| {
+            BrowserError::RelayConfigFailed {
                 message: e.to_string(),
-            })?;
-        set_relay_config(&omp_path, app, false)?;
+            }
+        })?;
     }
     Ok(RelayInfo {
         session_id: session_id.to_string(),
@@ -1297,53 +1374,88 @@ fn probe_relay_status(port: u16, timeout: Duration) -> Option<u16> {
         .ok()
 }
 
-/// Flip the persisted setting that makes *new* omp sessions default to
-/// relay mode (`browser.relay`; `config/settings-schema.ts:4509-4519`).
-/// `omp config set|reset` is a short-lived CLI invocation of the same
-/// pinned binary — not the long-running `--mode rpc-ui` subprocess. There
-/// is no RPC command for mutating a running session's settings (the closed
-/// `RpcCommand` union in the pinned `modes/rpc/rpc-types.ts` runs
-/// `negotiate_protocol` through `login`; none of it touches config), so
-/// persisting through the same global config layer every session reads
-/// once at startup (`~/.omp/config.yml`, via `config/settings.ts`'s
-/// `Settings.init`) is the only externally reachable lever. A session
-/// already running when a toggle flips keeps whatever kind it resolved at
-/// its own startup: `reloadFromDisk` is only ever called before a subagent
-/// spawn or a project-directory change, never on the browser-tool path.
-/// Closing that gap — feeding a session's settings at spawn time — is
-/// session-lifecycle work belonging with `omp_start`, out of this module's
-/// scope; `set_connected_cdp_config` (defined beside `browser_launch`/
-/// `browser_stop`, earlier in this file) wires T9's `connected`-kind CDP
-/// URL through this identical lever and shares this identical gap.
-fn set_relay_config(omp_path: &Path, app: &AppHandle, enabled: bool) -> Result<(), BrowserError> {
-    let cwd = app
-        .path()
-        .home_dir()
-        .map_err(|e| BrowserError::RelayConfigFailed {
-            message: e.to_string(),
-        })?;
-    let mut args: Vec<&str> = vec!["config"];
-    if enabled {
-        args.extend(["set", "browser.relay", "true"]);
-    } else {
-        args.extend(["reset", "browser.relay"]);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// A unique, existing temp file (stands in for a Chromium binary),
+    /// cleaned up via `Drop`.
+    struct TempFile(PathBuf);
+    impl TempFile {
+        fn new(name: &str) -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!("omp-gui-chromium-test-{name}-{nanos}"));
+            std::fs::write(&path, b"").unwrap();
+            Self(path)
+        }
     }
-    let description = args.join(" ");
-    let output = Command::new(omp_path)
-        .args(&args)
-        .current_dir(&cwd)
-        .output()
-        .map_err(|e| BrowserError::RelayConfigFailed {
-            message: format!("failed to run {} {description}: {e}", omp_path.display()),
-        })?;
-    if !output.status.success() {
-        return Err(BrowserError::RelayConfigFailed {
-            message: format!(
-                "`omp {description}` exited with {}: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim(),
-            ),
-        });
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            std::fs::remove_file(&self.0).ok();
+        }
     }
-    Ok(())
+
+    #[test]
+    fn env_override_wins_over_preference_and_cache() {
+        let env_path = TempFile::new("env");
+        let pref_path = TempFile::new("pref");
+
+        let (found, source) = resolve_chromium_source(
+            Some(env_path.0.clone()),
+            Some(pref_path.0.to_str().unwrap()),
+            || panic!("cache_lookup must not run when the env override resolves"),
+        );
+        assert_eq!(found, Some(env_path.0.clone()));
+        assert_eq!(source, ChromiumSource::Env);
+    }
+
+    #[test]
+    fn preference_wins_over_cache_when_env_is_unset() {
+        let pref_path = TempFile::new("pref2");
+
+        let (found, source) =
+            resolve_chromium_source(None, Some(pref_path.0.to_str().unwrap()), || {
+                panic!("cache_lookup must not run when the preference resolves")
+            });
+        assert_eq!(found, Some(pref_path.0.clone()));
+        assert_eq!(source, ChromiumSource::Preference);
+    }
+
+    #[test]
+    fn a_missing_env_override_falls_through_to_preference() {
+        let pref_path = TempFile::new("pref3");
+
+        let (found, source) = resolve_chromium_source(
+            Some(PathBuf::from("/nonexistent/omp-gui-chromium-env-override")),
+            Some(pref_path.0.to_str().unwrap()),
+            || panic!("cache_lookup must not run when the preference resolves"),
+        );
+        assert_eq!(found, Some(pref_path.0.clone()));
+        assert_eq!(source, ChromiumSource::Preference);
+    }
+
+    #[test]
+    fn a_missing_preference_falls_through_to_cache() {
+        let cache_path = TempFile::new("cache");
+        let cache_path_clone = cache_path.0.clone();
+
+        let (found, source) = resolve_chromium_source(
+            None,
+            Some("/nonexistent/omp-gui-chromium-preference"),
+            move || Some(cache_path_clone.clone()),
+        );
+        assert_eq!(found, Some(cache_path.0.clone()));
+        assert_eq!(source, ChromiumSource::Cache);
+    }
+
+    #[test]
+    fn nothing_resolved_anywhere_is_none() {
+        let (found, source) = resolve_chromium_source(None, None, || None);
+        assert_eq!(found, None);
+        assert_eq!(source, ChromiumSource::None);
+    }
 }

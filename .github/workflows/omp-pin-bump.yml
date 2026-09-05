@@ -61,9 +61,27 @@ jobs:
         if: steps.bump.outputs.changed == 'true'
         run: node scripts/fetch-omp.mjs --force
 
+      - name: Setup Rust toolchain
+        if: steps.bump.outputs.changed == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        if: steps.bump.outputs.changed == 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Tauri Linux dependencies
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
       - name: tsc + protocol smoke suite (ADR-0008 gate)
         if: steps.bump.outputs.changed == 'true'
         run: pnpm run smoke
+
+      - name: cargo protocol smoke test (ADR-0008 gate)
+        if: steps.bump.outputs.changed == 'true'
+        run: cargo test -p shell smoke
 
       # peter-evans/create-pull-request defaults to the job's GITHUB_TOKEN.
       # Commits authored by that token do not themselves trigger .github/workflows/ci.yml
@@ -84,8 +102,9 @@ jobs:
 
             - `omp-pin.json` and `platform/ipc/package.json` now point at
               `can1357/oh-my-pi` release `${{ steps.bump.outputs.version }}`.
-            - `tsc` and the protocol smoke suite (`platform/ipc`) passed against
-              the new binary before this PR was opened.
+            - `tsc` and the protocol smoke suite (`platform/ipc`), plus the Rust
+              smoke gate (`cargo test -p shell smoke`), passed against the new
+              binary before this PR was opened.
 
             Changelog: https://github.com/can1357/oh-my-pi/releases/tag/v${{ steps.bump.outputs.version }}
           add-paths: |

@@ -33,6 +33,27 @@ export function tauriBridge(): BrowserShellBridge {
     listSessionFiles: () => commands.listSessionFiles().then(unwrap),
     probeForeignSessionLock: (path) => commands.probeForeignSessionLock(path).then(unwrap),
     readSessionPreview: (path) => commands.readSessionPreview(path).then(unwrap),
+    preferencesRead: () => commands.preferencesRead().then(unwrap),
+    preferencesWrite: (prefs) => commands.preferencesWrite(prefs).then(unwrap),
+    preferencesEffective: () => commands.preferencesEffective().then(unwrap),
+    pathProbe: (path) => commands.pathProbe(path),
+    ompBinaryInfo: () => commands.ompBinaryInfo(),
+    ompSmokeTest: (path) => commands.ompSmokeTest(path).then(unwrap),
+    ompOverrideCommit: (path) => commands.ompOverrideCommit(path).then(unwrap),
+    ompOverrideClear: () => commands.ompOverrideClear(),
+    configList: () => commands.configList().then(unwrap),
+    configSet: (key, value) => commands.configSet(key, value).then(unwrap),
+    configReset: (key) => commands.configReset(key).then(unwrap),
+    configUnset: async (key) => {
+      await commands.configUnset(key).then(unwrap);
+    },
+    configSchema: () => commands.configSchema().then(unwrap),
+    authProvidersList: () => commands.authProvidersList().then(unwrap),
+    authAccountsList: () => commands.authAccountsList().then(unwrap),
+    authLogout: async (providerId) => {
+      await commands.authLogout(providerId).then(unwrap);
+    },
+    modelsList: () => commands.modelsList().then(unwrap),
   };
 }
 /** Events expose listen() as Promise<unlisten>; bridge handlers need a sync unsubscribe. */

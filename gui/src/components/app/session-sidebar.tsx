@@ -1,4 +1,5 @@
 import type { SessionsStore, SessionStatus, SessionSummary } from "@omp-gui/ipc";
+import { useNavigate } from "@tanstack/react-router";
 import { Badge } from "@omp-gui/ui/components/badge";
 import { Button } from "@omp-gui/ui/components/button";
 import {
@@ -11,6 +12,7 @@ import {
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -25,6 +27,7 @@ import { cn } from "@omp-gui/ui/lib/utils";
 import {
   CircleIcon,
   CircleNotchIcon,
+  GearSixIcon,
   PlusIcon,
   StackIcon,
   WarningCircleIcon,
@@ -32,6 +35,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { SessionSwitcher } from "@gui/components/app/session-switcher";
+import { rememberOrigin } from "@gui/settings/settings-origin";
 
 export interface SessionSidebarProps {
   sessions: SessionSummary[];
@@ -73,6 +77,11 @@ const STATUS_ICON_CLASS: Record<SessionStatus, string> = {
  * for approval counts. `SessionSummary.pendingApprovals` is a placeholder
  * T4's approval inbox populates (see `sessions-store.ts`'s top-of-file
  * comment) — this component only renders whatever number it's given.
+ *
+ * The footer's Settings gear (T20, issue #19/#20) is the sidebar's second
+ * entry point into `/settings`, alongside the `⌘,`/`Ctrl+,` handler in
+ * `app-shell.tsx`; both call `rememberOrigin` first so Settings' back
+ * button and `Esc` return here.
  */
 export function SessionSidebar({
   sessions,
@@ -82,6 +91,13 @@ export function SessionSidebar({
   onClose,
   store,
 }: SessionSidebarProps) {
+  const navigate = useNavigate();
+
+  const openSettings = () => {
+    rememberOrigin(window.location.href);
+    void navigate({ to: "/settings" });
+  };
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="flex flex-row items-center justify-between gap-2 px-2">
@@ -155,6 +171,16 @@ export function SessionSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={openSettings} tooltip="Settings ⌘,">
+              <GearSixIcon />
+              <span className="truncate group-data-[collapsible=icon]:hidden">Settings</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

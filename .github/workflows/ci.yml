@@ -77,6 +77,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Fetch pinned omp binary (tauri-build bundles it; smoke.rs tests run it)
+        run: node scripts/fetch-omp.mjs
+
       - name: Regenerate specta bindings
         run: pnpm run typegen
 

@@ -11,6 +11,23 @@ import type {
   ForeignLockProbe,
   SessionPreview,
   ChromiumInstallEvent,
+  AppPreferences,
+  PreferencesError,
+  EffectivePreferences,
+  PathProbe,
+  OmpBinaryInfo,
+  OmpBinarySource,
+  OmpOverrideError,
+  SmokeReport,
+  SmokeFailure,
+  SmokeStage,
+  ConfigEntry,
+  ConfigSchema,
+  AuthProvider,
+  AuthAccount,
+  CliError,
+  ModelEntry,
+  ModelsCatalog,
 } from "../bindings/bindings.gen";
 
 export type {
@@ -25,6 +42,23 @@ export type {
   ForeignLockProbe,
   SessionPreview,
   ChromiumInstallEvent,
+  AppPreferences,
+  PreferencesError,
+  EffectivePreferences,
+  PathProbe,
+  OmpBinaryInfo,
+  OmpBinarySource,
+  OmpOverrideError,
+  SmokeReport,
+  SmokeFailure,
+  SmokeStage,
+  ConfigEntry,
+  ConfigSchema,
+  AuthProvider,
+  AuthAccount,
+  CliError,
+  ModelEntry,
+  ModelsCatalog,
 };
 
 export interface ShellBridge {
@@ -104,6 +138,130 @@ export interface ShellBridge {
   browserInstallChromium?(): Promise<string>;
   /** Subscribe to `browserInstallChromium` progress events. */
   onChromiumInstallProgress?(handler: (e: ChromiumInstallEvent) => void): () => void;
+  /**
+   * Read the app-owned App Preferences file (theme, omp/Chromium path
+   * overrides, default working directory) — always available, even when
+   * omp itself is unreachable (ADR-0011). Optional: `nodeBridge` only
+   * implements it when constructed with a `preferencesPath` option, since
+   * most seam tests don't exercise App Preferences at all.
+   */
+  preferencesRead?(): Promise<AppPreferences>;
+  /**
+   * Write the App Preferences file, preserving any keys this app version
+   * doesn't know about, and return what is now on disk. Optional for the
+   * same reason as `preferencesRead`.
+   */
+  preferencesWrite?(prefs: AppPreferences): Promise<AppPreferences>;
+  /**
+   * The default working directory a fresh session would actually spawn
+   * into and the Chromium executable the Browser Pane would actually
+   * launch, plus where each came from (#22, issue #19: "Both rows show
+   * the effective value and where it came from"). Optional for the same
+   * reason as `preferencesRead`.
+   */
+  preferencesEffective?(): Promise<EffectivePreferences>;
+  /**
+   * Probe an arbitrary filesystem path (existence, directory-ness,
+   * executable-ness) so the working-directory/Chromium-path rows (#22)
+   * can validate an edit inline before committing it — the validated
+   * path field stands in for a directory picker since no Tauri dialog
+   * plugin is wired in yet. Optional for the same reason as
+   * `preferencesRead`.
+   */
+  pathProbe?(path: string): Promise<PathProbe>;
+  /**
+   * Reports which omp binary the app currently resolves to run (ADR-0004:
+   * resolved path, version, and whether that's the bundled pin, a
+   * committed App Preferences override, or the `OMP_GUI_OMP_PATH` env
+   * override). Never rejects — even a broken committed override must
+   * leave this row usable (ADR-0011's "bootstrap independence"). Optional:
+   * only the Tauri shell replicates the full env -> preference ->
+   * dev/bundled resolution chain from `omp::resolve_omp_path`.
+   */
+  ompBinaryInfo?(): Promise<OmpBinaryInfo>;
+  /**
+   * Runs the shared launch-time protocol smoke test
+   * (`crates/shell/src/smoke.rs`) against an arbitrary candidate path
+   * without committing anything — spawn, await the `ready` frame, one
+   * canned round trip, kill. Rejects with `BridgeCommandError<SmokeFailure>`
+   * naming the failed stage. `nodeBridge` implements this one
+   * unconditionally (it needs no preferences file) so the ipc seam test
+   * can prove a fake executable fails at a named stage without the Tauri
+   * shell.
+   */
+  ompSmokeTest?(path: string): Promise<SmokeReport>;
+  /**
+   * Smoke-tests `path` and, only on success, commits it as the App
+   * Preferences omp override (ADR-0004's compatibility-risk gate — the
+   * acknowledgement dialog itself is a GUI-only concern, wired in
+   * `omp-binary-row.tsx`). A failed smoke test writes nothing; the
+   * previous override is retained. Optional for the same reason as
+   * `ompBinaryInfo`.
+   */
+  ompOverrideCommit?(path: string): Promise<OmpBinaryInfo>;
+  /**
+   * Reverts the App Preferences omp override to the bundled pin — no
+   * smoke test needed. Optional for the same reason as `ompBinaryInfo`.
+   */
+  ompOverrideClear?(): Promise<OmpBinaryInfo>;
+  /**
+   * List every setting omp's global config recognizes, current value
+   * included (ADR-0011). Every invocation runs from a guaranteed-empty
+   * scratch directory, so a project's `.claude/settings.json` never
+   * leaks in. Optional: only omp-backed bridges (Tauri; `nodeBridge`
+   * unconditionally, since it needs no extra construction option)
+   * implement the config surface — rejects with `BridgeCommandError<CliError>`.
+   */
+  configList?(): Promise<ConfigEntry[]>;
+  /**
+   * Set `key` to the raw CLI string `value` omp expects for that key's
+   * type (`platform/ipc/src/settings/serialize.ts` produces it) and
+   * return the entry as it now reads. Rejects with omp's own validation
+   * message for an unknown key or a mistyped value.
+   */
+  configSet?(key: string, value: string): Promise<ConfigEntry>;
+  /** Restore `key` to omp's current schema default and return the entry. */
+  configReset?(key: string): Promise<ConfigEntry>;
+  /** Remove `key` from the global config file entirely. */
+  configUnset?(key: string): Promise<void>;
+  /**
+   * The running binary's own description of its settings surface — tabs,
+   * groups, labels, descriptions, options, and declarative conditions.
+   * An override binary predating `config schema` rejects; callers
+   * degrade to an Advanced-only view built from `configList()` alone.
+   */
+  configSchema?(): Promise<ConfigSchema>;
+  /**
+   * List every OAuth/credential provider omp's auth broker knows about
+   * (Accounts section row set — one row per provider regardless of login
+   * state). Optional for the same reason as `preferencesRead`: only the
+   * real Tauri shell and a `nodeBridge` built for the Settings seam
+   * implement it.
+   */
+  authProvidersList?(): Promise<AuthProvider[]>;
+  /**
+   * List every stored OAuth account across every provider (`omp token
+   * <provider> --list`, run once per provider — see `crates/shell/src/
+   * auth.rs`'s doc comment for why there is no bulk-listing call).
+   */
+  authAccountsList?(): Promise<AuthAccount[]>;
+  /**
+   * Log a provider out of omp's own credential store. Unlike login (which
+   * rides the existing rpc-ui pass-through on a live session,
+   * `session/login.ts`), logout has no RPC equivalent and needs no
+   * running session — it shells out to `omp auth-broker logout <provider>`
+   * directly.
+   */
+  authLogout?(providerId: string): Promise<void>;
+  /**
+   * omp's own model catalog (ADR-0011 "Bespoke sections"): every model
+   * across every provider with at least one credential present, flat and
+   * ungrouped. The Models section groups it by provider and joins it with
+   * `enabledModels`/`disabledProviders`/`modelRoles` from the config
+   * bridge — this call reports only what exists, never enable/role state.
+   * Optional for the same reason as `configList`.
+   */
+  modelsList?(): Promise<ModelsCatalog>;
 }
 
 /**

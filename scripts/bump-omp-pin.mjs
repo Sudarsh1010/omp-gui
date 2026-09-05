@@ -16,7 +16,9 @@
  * Usage: node scripts/bump-omp-pin.mjs
  */
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -57,6 +59,7 @@ const releaseBase = `https://github.com/${REPO}/releases/download/${tag}`;
 console.log(`bumping omp pin ${pin.version} -> ${version}`);
 
 const platforms = {};
+const hostKey = `${process.platform}-${process.arch}`;
 for (const platformKey of PLATFORMS) {
   const url = `${releaseBase}/omp-${platformKey}`;
   console.log(`hashing ${url}`);
@@ -69,6 +72,43 @@ for (const platformKey of PLATFORMS) {
   }
   const bytes = new Uint8Array(await assetResponse.arrayBuffer());
   platforms[platformKey] = createHash("sha256").update(bytes).digest("hex");
+  if (platformKey === hostKey) assertSettingsSurface(bytes, tag);
+}
+
+/**
+ * The Settings page (ADR-0011) needs `omp config schema --json` and
+ * `omp config unset`, which landed upstream via can1357/oh-my-pi#10847.
+ * While the pin points at a fork release carrying them, an upstream
+ * release without them must not replace it — refuse the bump loudly
+ * instead of opening a PR the smoke suite would fail anyway.
+ */
+function assertSettingsSurface(bytes, releaseTag) {
+  const dir = mkdtempSync(join(tmpdir(), "omp-pin-bump-"));
+  const binary = join(dir, "omp");
+  writeFileSync(binary, bytes, { mode: 0o755 });
+  const agentDir = mkdtempSync(join(tmpdir(), "omp-pin-bump-agent-"));
+  const env = { ...process.env, PI_CODING_AGENT_DIR: agentDir };
+  const schema = spawnSync(binary, ["config", "schema", "--json"], {
+    env,
+    cwd: dir,
+    encoding: "utf8",
+  });
+  const unset = spawnSync(binary, ["config", "unset", "autoResume"], {
+    env,
+    cwd: dir,
+    encoding: "utf8",
+  });
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(agentDir, { recursive: true, force: true });
+  if (schema.status !== 0 || unset.status !== 0) {
+    // Exit 0 without writing: the workflow's `git diff --quiet -- omp-pin.json`
+    // then reports `changed=false` and opens no PR, instead of paging weekly
+    // on a known, expected state.
+    console.log(
+      `${releaseTag} lacks \`omp config schema --json\` / \`omp config unset\` (ADR-0011); keeping the current pin (${pin.releaseBase}). See can1357/oh-my-pi#10847.`,
+    );
+    process.exit(0);
+  }
 }
 
 writeFileSync(pinPath, `${JSON.stringify({ ...pin, version, releaseBase, platforms }, null, 2)}\n`);
